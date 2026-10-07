@@ -1,0 +1,83 @@
+import { Router } from 'express';
+import mongoose from 'mongoose';
+import Component, { CATEGORIES } from '../models/Component.js';
+import AllocationProfile from '../models/AllocationProfile.js';
+import CheckSetting from '../models/CheckSetting.js';
+import BalancePair from '../models/BalancePair.js';
+import { badRequest } from '../services/errors.js';
+import { allocateBudget } from '../services/allocation.js';
+import { validateBuild } from '../services/compatibility.js';
+import { recommendBuild } from '../services/recommend.js';
+import { evaluateComponentOptions } from '../services/componentOptions.js';
+import { withSampleImage } from '../data/componentImages.js';
+
+const router = Router();
+router.use((req, res, next) => {
+  if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database unavailable. Configure MongoDB Atlas and run the seed command.' });
+  next();
+});
+const loadProfile = async slug => {
+  if (typeof slug !== 'string') throw badRequest('Choose a profile.');
+  const profile = await AllocationProfile.findOne({ slug, active: true }).lean();
+  if (!profile) { const error = new Error('Profile not found'); error.status = 404; throw error; }
+  return profile;
+};
+const configuration = async () => {
+  const [settings, pairs] = await Promise.all([CheckSetting.find().lean(), BalancePair.find({ active: true }).lean()]);
+  return { settings, pairs };
+};
+async function resolveItems(input) {
+  if (!Array.isArray(input) || input.length > 7) throw badRequest('Provide up to seven item rows.');
+  for (const item of input) if (!item || typeof item.componentId !== 'string' || !mongoose.isObjectIdOrHexString(item.componentId)) throw badRequest('Invalid component ID.');
+  const records = await Component.find({ _id: { $in: input.map(i => i.componentId) } }).lean();
+  return input.map(item => {
+    const component = records.find(c => String(c._id) === item.componentId);
+    if (!component) { const error = new Error('Component not found'); error.status = 404; throw error; }
+    return { component, quantity: item.quantity ?? 1 };
+  });
+}
+router.get('/components', async (req, res) => {
+  const { category, q } = req.query;
+  const filter = { archived: false };
+  if (category !== undefined) {
+    if (!CATEGORIES.includes(category)) throw badRequest('Invalid category.');
+    filter.category = category;
+  }
+  if (q !== undefined) {
+    if (typeof q !== 'string' || q.length > 100) throw badRequest('Search must be text up to 100 characters.');
+    const search = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.$or = [{ name: { $regex: search, $options: 'i' } }, { brand: { $regex: search, $options: 'i' } }];
+  }
+  res.json((await Component.find(filter).sort({ category: 1, price: 1 }).lean()).map(withSampleImage));
+});
+router.get('/components/:id', async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) throw badRequest('Invalid component ID.');
+  const component = await Component.findOne({ _id: req.params.id, archived: false }).lean();
+  if (!component) return res.status(404).json({ message: 'Component not found' });
+  res.json(withSampleImage(component));
+});
+router.get('/profiles', async (req, res) => res.json(await AllocationProfile.find({ active: true }).lean()));
+router.get('/profiles/:slug', async (req, res) => res.json(await loadProfile(req.params.slug)));
+router.post('/allocations', async (req, res) => {
+  const profile = await loadProfile(req.body.profileSlug);
+  res.json(allocateBudget(req.body.budget, profile.allocations, req.body.locks ?? {}));
+});
+router.post('/recommendations', async (req, res) => {
+  const profile = await loadProfile(req.body.profileSlug);
+  const [components, config] = await Promise.all([Component.find({ archived: false, availability: { $ne: 'out of stock' } }).lean(), configuration()]);
+  res.json(recommendBuild({ budget: req.body.budget, profile, components: components.map(withSampleImage), ...config, locks: req.body.locks ?? {} }));
+});
+async function evaluate(req) {
+  const [items, config, profile] = await Promise.all([resolveItems(req.body.items), configuration(), req.body.profileSlug ? loadProfile(req.body.profileSlug) : null]);
+  return validateBuild(items, config.settings, config.pairs, profile);
+}
+router.post('/validations', async (req, res) => res.json(await evaluate(req)));
+router.post('/power-calculations', async (req, res) => res.json((await evaluate(req)).power));
+router.post('/balance-assessments', async (req, res) => res.json({ issues: (await evaluate(req)).issues.filter(i => i.severity === 'warning') }));
+router.post('/component-options', async (req, res) => {
+  const [items, components, config] = await Promise.all([
+    resolveItems(req.body.items), Component.find({ archived: false }).lean(), configuration()
+  ]);
+  res.json(evaluateComponentOptions(components, items, config.settings));
+});
+export default router;
