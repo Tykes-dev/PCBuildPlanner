@@ -12,10 +12,6 @@ import { evaluateComponentOptions } from '../services/componentOptions.js';
 import { withSampleImage } from '../data/componentImages.js';
 
 const router = Router();
-router.use((req, res, next) => {
-  if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database unavailable. Configure MongoDB Atlas and run the seed command.' });
-  next();
-});
 const loadProfile = async slug => {
   if (typeof slug !== 'string') throw badRequest('Choose a profile.');
   const profile = await AllocationProfile.findOne({ slug, active: true }).lean();

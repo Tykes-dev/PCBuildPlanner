@@ -1,5 +1,5 @@
 {
   "name": "@pcbuild/backend", "private": true, "version": "0.1.0", "type": "module",
-  "scripts": { "dev": "node --watch server.js", "start": "node server.js", "test": "node --test", "seed": "node seed.js" },
-  "dependencies": { "cors": "^2.8.5", "dotenv": "^17.2.0", "express": "^5.1.0", "mongoose": "^8.19.0" }
+  "scripts": { "dev": "node --watch server.js", "start": "node server.js", "test": "node --test", "seed": "node seed.js", "create-admin": "node scripts/createAdmin.js" },
+  "dependencies": { "bcryptjs": "^3.0.2", "cors": "^2.8.5", "dotenv": "^17.2.0", "express": "^5.1.0", "jsonwebtoken": "^9.0.2", "mongoose": "^8.19.0" }
 }

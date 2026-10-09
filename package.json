@@ -5,7 +5,8 @@
     "dev": "concurrently -n API,WEB -c green,blue \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build -w frontend",
     "test": "npm test -w backend",
-    "seed": "npm run seed -w backend"
+    "seed": "npm run seed -w backend",
+    "create-admin": "npm run create-admin -w backend"
   },
   "devDependencies": { "concurrently": "^9.2.0" },
   "overrides": { "shell-quote": "^1.12.0" }

@@ -1,6 +1,6 @@
 # PC Build Planner — Team Context
 
-Updated October 7, 2026. This file describes the actual local implementation.
+Updated October 8, 2026. This file describes the actual local implementation.
 
 ## Project and structure
 
@@ -12,7 +12,7 @@ Use VS Code to open the repository root. npm workspaces share one lockfile.
 
 - React/Vite/TypeScript, Tailwind theme, React Router, axios, React Hook Form/Zod.
 - Landing, recommendation, manual planner, component catalog, not-found route.
-- Express/Mongoose API and four models: Component, AllocationProfile, CheckSetting, BalancePair.
+- Express/Mongoose API and five models: Component, AllocationProfile, CheckSetting, BalancePair, and User.
 - Hard checks: CPU socket, memory type, board/case fit, PSU headroom. Additional quantity check for motherboard memory slots.
 - Exact whole-peso budget allocations with locks; overcommitted locks are rejected.
 - Recommendation feasibility search with priority upgrades. Complete recommendations fit the total budget; inadequate budgets return an explanation and minimum known cost.
@@ -23,6 +23,10 @@ Use VS Code to open the repository root. npm workspaces share one lockfile.
 - Visual refinement adds an amber accent, a code-native PC tower illustration, stronger homepage typography, numbered guidance cards, catalog category tabs/counts, sample-score bars, and a planner budget-use meter. Both themes remain supported, with no gradients or new dependencies. Browser checks covered desktop light/dark views and 375px home/catalog/planner layouts; category tabs filtered correctly and the meter reflected the current total. Final frontend build passed.
 - Catalog and planner thumbnails use per-model photo metadata, with explicit variant captions and source links. Component.imageUrl overrides bundled sample photos; existing sample records receive metadata in read-only API responses without reseeding.
 - POST /api/component-options evaluates every candidate using the same backend hard checks as final validation. Incompatible/out-of-stock choices are disabled before selection. Existing parts can be removed when switching platforms. Above-budget and warning-only parts remain selectable.
+- Authentication now uses a fifth Mongoose model, User, with normalized unique email, bcrypt password hashes, customer/admin roles, active status, and last-login time. JWTs are stored in HttpOnly SameSite=Lax cookies, contain only the user ID, and are rechecked against the active database user on protected requests. Bearer tokens are also accepted for non-browser clients.
+- Public registration always creates a customer and rejects role input. Login, logout, current-user, admin user listing, and guarded role-update endpoints are implemented. Server middleware distinguishes unauthenticated (401) from non-admin (403) access; self-demotion and removal of the final active administrator are blocked.
+- The frontend has login, registration, protected account, and admin user-management pages; session-aware navigation; credentialed axios; and customer/admin route guards. Existing planning/catalog pages remain public.
+- `npm run create-admin` launches a masked interactive first-admin setup. Admin credentials are never stored in source or accepted as command-line arguments.
 
 ## Intended behavior
 
@@ -36,21 +40,25 @@ Compatibility means supported checks only; BIOS support, connectors, GPU clearan
 
 ## Handover modules
 
-Authentication and role-based access are assigned to other members. No dummy login or role switch is implemented.
-No application User model, users collection, or application admin account exists yet. The Atlas database user in backend/.env is a backend connection credential, not a PC Build Planner login.
-The authentication owner should implement the User model, password hashing, login/session handling, and server-side role checks, then provide a controlled setup script to create the initial admin account. Public registration must not allow users to assign themselves the admin role. Keep initial admin credentials outside source control and document the setup procedure without passwords.
-No public catalog/config mutation routes exist until authorization is added.
+Authentication and customer/admin role access are implemented locally. There is intentionally no dummy login or browser role switch. The Atlas database user in backend/.env remains a backend connection credential, not a PC Build Planner login.
+Live setup is complete: ignored `backend/.env` exists with MONGO_URI, CLIENT_ORIGIN, JWT_SECRET, and JWT_TTL_HOURS; the Atlas URI targets the `pcbuildplanner` database; and one active application administrator was created through the masked interactive setup command. Do not rerun first-admin setup with the same email; the script intentionally refuses to replace or promote an existing account.
+On this Windows machine PowerShell blocks the `npm.ps1` shim. Use `npm.cmd run dev`, `npm.cmd run create-admin`, and analogous `npm.cmd` commands, or use a shell where npm is permitted. Do not weaken the machine-wide execution policy just for this project.
+No catalog/config mutation routes were added in this authentication pass. Future admin mutations must use the existing server-side requireAuth/requireAdmin middleware and must not rely only on frontend guards.
 Saved builds, BuildItem relations, ownership, requests and their status transitions, admin CRUD/configuration, reports, and price snapshots remain for the team.
 Shared frontend contracts are in `frontend/src/types/index.ts`; update them alongside backend schemas.
 The existing prototype is a feature reference, not a source-faithful implementation or design to copy.
 
 ## External setup
 
-Verification on October 7: all 16 backend tests and the frontend production build passed. The local Atlas-backed API serves 34 components; prior live browser checks verified disabled socket/memory mismatches and a narrow planner layout without horizontal overflow. Broader integration and final submission QA remain pending.
+Verification on October 8: all 26 backend tests and the frontend production build passed after authentication was added. Tests cover bcrypt hashing, JWT/cookie constraints, safe public serialization, 401/403 middleware behavior, role safeguards, database-unavailable handling, credentialed CORS, and the prior 16 planning cases. The dependency audit reported zero vulnerabilities.
+
+Live setup was then verified against Atlas: the connection succeeded, `GET /api/health` returned `{"database":"connected"}`, `GET /api/components` returned all 34 seeded records, the frontend returned HTTP 200, and a database count confirmed one active admin. Registration/login through the browser and admin role changes should be the next manual QA pass.
+
+The Atlas password and JWT signing value appeared in setup screenshots shared in chat. The user chose to continue for local coursework, but the next collaborator must treat both as exposed and rotate them before deployment, repository sharing, widening Atlas network access, or any non-local use. Never record replacement values in documentation, commits, screenshots, frontend variables, or chat.
 
 The user will create GitHub and Atlas personally with step-by-step guidance.
 The user created/configured Atlas and seeded the sample data. No remote GitHub repository has been created by the assistant.
-Store Atlas credentials only in ignored `backend/.env`; never in frontend variables.
+Store Atlas credentials and JWT_SECRET only in ignored `backend/.env`; never in frontend variables.
 Read README and docs/SETUP.md for setup. Do not claim live database verification before connecting and seeding.
 
 ## Team workflow
