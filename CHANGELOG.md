@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-10-08 — Live Atlas and administrator setup
+
+- Moved the user's local environment file to ignored `backend/.env` and validated MONGO_URI, CLIENT_ORIGIN, JWT_SECRET, and JWT_TTL_HOURS without logging their values.
+- Refreshed the Atlas Drivers connection string, targeted the `pcbuildplanner` database explicitly, and confirmed a live database connection.
+- Created the first application administrator with the masked interactive setup command; a read-only database check confirmed exactly one active admin without displaying account details.
+- Live verification passed: `GET /api/health` reported connected, `GET /api/components` returned all 34 seeded records, and the Vite frontend returned HTTP 200.
+- Recorded the Windows execution-policy workaround: use `npm.cmd run create-admin` and `npm.cmd run dev` when PowerShell blocks `npm.ps1`; no machine-wide policy change is required.
+- The Atlas password and JWT secret appeared in setup screenshots. They are not written to source or documentation, but must be rotated before deployment, repository sharing, expanded Atlas network access, or other non-local use.
+
+## 2026-10-08 — Authentication and role-based access
+
+- Added the User model with normalized unique emails, hidden bcrypt password hashes, customer/admin roles, active status, and last-login timestamps.
+- Added register, login, logout, and current-user endpoints using JWTs in HttpOnly SameSite=Lax cookies, with Bearer-token fallback for non-browser clients. Tokens contain only a user ID; protected requests reload the active user and current role.
+- Added requireAuth/requireAdmin middleware, credentialed CORS, shared database-readiness handling, safe 401/403 errors, admin user listing, and guarded role updates.
+- Public registration rejects role input and always creates a customer. Admin role management blocks self-demotion and demotion of the final active administrator.
+- Added a masked interactive `npm run create-admin` workflow. The admin password is not stored in source, documentation, a command argument, or a public frontend variable.
+- Added login, registration, account, and admin user-management pages; auth-aware navigation; credentialed axios; protected/admin route guards; shared role contracts; and responsive styling. Existing planning pages remain public.
+- Added backend-only JWT_SECRET/JWT_TTL_HOURS configuration and startup validation. Private values belong in ignored backend/.env; Atlas credentials remain separate from application logins.
+- Added bcryptjs and jsonwebtoken. The dependency audit reported zero vulnerabilities.
+- Validation: all 26 backend tests passed and the strict TypeScript/Vite production build completed. Subsequent live Atlas and first-admin verification is recorded in the entry above.
+
 ## 2026-10-07 — Interface visual refinement
 
 - Redesigned Home.tsx with a split hero, BuildIllustration.tsx SVG tower, feature strip, and numbered guidance cards.

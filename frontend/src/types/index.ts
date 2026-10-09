@@ -1,5 +1,16 @@
 export const CATEGORIES = ['cpu', 'motherboard', 'memory', 'gpu', 'storage', 'case', 'psu'] as const;
 export type Category = typeof CATEGORIES[number];
+export type Role = 'customer' | 'admin';
+export interface AuthUser {
+  _id: string;
+  name: string;
+  email: string;
+  role: Role;
+  active: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 export const LABELS: Record<Category, string> = { cpu: 'Processor', motherboard: 'Motherboard', memory: 'Memory', gpu: 'Graphics card', storage: 'Storage', case: 'Case', psu: 'Power supply' };
 export interface Component { _id: string; name: string; brand: string; category: Category; price: number; performanceScore: number; availability: string; archived: boolean; imageUrl?: string; imageSource?: string; imageCaption?: string; socket?: string; memoryType?: string; formFactor?: string; supportedFormFactors?: string[]; wattageRating?: number; capacityGb?: number; memorySlots?: number; powerDraw: number; }
 export interface ComponentOption { componentId: string; compatible: boolean; available: boolean; reasons: string[]; }

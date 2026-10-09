@@ -22,14 +22,32 @@
 4. Add your current public IP to the project network access list. Each teammate running the backend needs their IP permitted and their own database credentials.
 5. Open Connect > Drivers and select Node.js. Copy the connection string privately.
 6. Copy backend/.env.example to backend/.env. Replace the placeholders in MONGO_URI and use pcbuildplanner as the database name. URL-encode special characters in the password if needed.
-7. From the repository root run `npm run seed`. MongoDB creates the database and its collections when records are written; manual collection creation is unnecessary.
-8. Run `npm run dev`. Open http://localhost:5173 and check http://localhost:3001/api/health for a connected database.
+7. Generate a private JWT signing secret from the repository root:
+
+   ```powershell
+   node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+   ```
+
+   Paste the output after `JWT_SECRET=` in backend/.env. Keep `JWT_TTL_HOURS=8` unless a different session lifetime is required. Never put either the Atlas credential or JWT secret in frontend/.env or a `VITE_` variable.
+8. From the repository root run `npm run seed`. MongoDB creates the database and its collections when records are written; manual collection creation is unnecessary.
+9. Run `npm run create-admin`. Enter the first administrator's name, email, and masked password when prompted. The password is not accepted as a command-line argument and should not be saved in source or documentation. The command refuses to replace or promote an existing account.
+10. Run `npm run dev`. Open http://localhost:5173 and check http://localhost:3001/api/health for a connected database. Register another account through the website to verify the default customer role, then sign in as the administrator and open Account > Manage users.
 
 Only the user should execute account setup and Git commit/push steps. The assistant prepares local source and validates it.
 
+## Authentication and roles
+
+- Application accounts are stored in the `users` collection. They are separate from the MongoDB Atlas database credential in MONGO_URI.
+- Public registration always creates a `customer`. It rejects a supplied role instead of trusting it.
+- Passwords are bcrypt-hashed and never returned by the API. Browser JWT sessions use an HttpOnly, SameSite=Lax cookie; no token is stored in frontend local storage.
+- `GET /api/auth/me` requires a valid, active user. Admin endpoints enforce `requireAuth` and `requireAdmin` on the server; frontend guards are only a user-interface layer.
+- An administrator can assign customer/admin roles at `/admin/users`. Self-demotion and demotion of the final active administrator are blocked.
+- To rotate the JWT signing key, replace JWT_SECRET and restart the backend. Existing sessions will become invalid and users must sign in again.
+- frontend/.env remains optional. If present, it should contain only a public API location such as `VITE_API_URL=http://localhost:3001/api`.
+
 ## Next members
 
-- Accounts: add User model, bcrypt hashing, JWT verification, requireAuth/requireAdmin, login/register UI, and route guards. Frontend guards are not a substitute for backend authorization.
+- Accounts follow-up: add password change/recovery, deliberate account deactivation/reactivation, audit history, and production cookie/deployment review if those enter scope. Preserve server-side authorization.
 - Builds/requests: add Build, BuildItem, BuildRequest models and ownership checks; wire planner save/import to persistent IDs and price snapshots.
 - Catalog/config: add protected CRUD and React Hook Form/Zod forms, server validation, confirmations, success feedback, default-profile handling, and pair canonicalization on updates.
 - Reports: aggregate real builds/requests; do not use hardcoded chart counts.
