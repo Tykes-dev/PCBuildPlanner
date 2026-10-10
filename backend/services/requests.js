@@ -47,9 +47,10 @@ export function assembleReport(savedBuildCount, statusRows, componentRows) {
 }
 export async function getReport() {
   const [savedBuildCount, statusRows, componentRows] = await Promise.all([
-    Build.countDocuments({}),
+    Build.countDocuments({ shopBuild: { $ne: true } }),
     BuildRequest.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
     Build.aggregate([
+      { $match: { shopBuild: { $ne: true } } },
       { $unwind: '$items' },
       { $group: { _id: '$items.component', selections: { $sum: 1 }, units: { $sum: '$items.quantity' },
         savedName: { $first: '$items.snapshot.name' }, savedBrand: { $first: '$items.snapshot.brand' }, savedCategory: { $first: '$items.snapshot.category' } } },
@@ -62,4 +63,3 @@ export async function getReport() {
   ]);
   return assembleReport(savedBuildCount, statusRows, componentRows);
 }
-

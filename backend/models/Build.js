@@ -13,9 +13,13 @@ const schema = new mongoose.Schema({
   profile: { type: mongoose.Schema.Types.ObjectId, ref: 'AllocationProfile', required: true },
   profileSlug: { type: String, required: true },
   items: { type: [itemSchema], default: [], validate: rows => rows.length <= 7 },
-  total: { type: Number, required: true, min: 0 }
+  total: { type: Number, required: true, min: 0 },
+  // Builds the shop makes: proposals answering an inquiry, and showcase builds.
+  // They are kept out of customer activity counts.
+  shopBuild: { type: Boolean, default: false },
+  visibility: { type: String, enum: ['private', 'published'], default: 'private' }
 }, { timestamps: true });
 
 schema.index({ owner: 1, updatedAt: -1 });
+schema.index({ visibility: 1, updatedAt: -1 });
 export default mongoose.model('Build', schema);
-

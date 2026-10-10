@@ -106,7 +106,7 @@ test('customer submission validates current builds, preserves snapshots, isolate
     Object.assign(record, update.$set); record.updatedAt = new Date();
     return withOwner(record);
   } }) }));
-  t.mock.method(Build, 'countDocuments', filter => { assert.deepEqual(filter, {}); return Promise.resolve(builds.length); });
+  t.mock.method(Build, 'countDocuments', filter => { assert.deepEqual(filter, { shopBuild: { $ne: true } }); return Promise.resolve(builds.length); });
   t.mock.method(BuildRequest, 'aggregate', pipeline => {
     assert.deepEqual(pipeline, [{ $group: { _id: '$status', count: { $sum: 1 } } }]);
     const counts = new Map();
@@ -114,9 +114,10 @@ test('customer submission validates current builds, preserves snapshots, isolate
     return Promise.resolve([...counts].map(([status, count]) => ({ _id: status, count })));
   });
   t.mock.method(Build, 'aggregate', pipeline => {
-    assert.deepEqual(pipeline[0], { $unwind: '$items' });
-    assert.equal(pipeline[1].$group._id, '$items.component');
-    assert.deepEqual(pipeline[1].$group.units, { $sum: '$items.quantity' });
+    assert.deepEqual(pipeline[0], { $match: { shopBuild: { $ne: true } } });
+    assert.deepEqual(pipeline[1], { $unwind: '$items' });
+    assert.equal(pipeline[2].$group._id, '$items.component');
+    assert.deepEqual(pipeline[2].$group.units, { $sum: '$items.quantity' });
     assert.equal(pipeline.find(stage => stage.$limit).$limit, 10);
     const groups = new Map();
     for (const build of builds) for (const item of build.items) {
@@ -203,4 +204,3 @@ test('customer submission validates current builds, preserves snapshots, isolate
     assert.equal((await request('/admin/reports', 2)).status, 503);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
-

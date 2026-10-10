@@ -1,4 +1,4 @@
-import { requireCustomer } from '../middleware/auth.js';
+import { requireUser } from '../middleware/auth.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import Component, { CATEGORIES } from '../models/Component.js';
@@ -13,9 +13,12 @@ import { evaluateComponentOptions } from '../services/componentOptions.js';
 import { withSampleImage } from '../data/componentImages.js';
 
 const router = Router();
+// The catalog is public. Everything else here reads configuration or runs the
+// planning engine: no writes, nothing owned. Any signed-in account may use it,
+// because administrators plan builds too when answering an inquiry.
 router.use((req, res, next) => {
   if (req.method === 'GET' && /^\/components(?:\/[^/]+)?\/?$/.test(req.path)) return next();
-  return requireCustomer(req, res, next);
+  return requireUser(req, res, next);
 });
 router.use((req, res, next) => {
   if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database unavailable. Configure MongoDB Atlas and run the seed command.' });
@@ -63,9 +66,27 @@ router.get('/components/:id', async (req, res) => {
 });
 router.get('/profiles', async (req, res) => res.json(await AllocationProfile.find({ active: true }).lean()));
 router.get('/profiles/:slug', async (req, res) => res.json(await loadProfile(req.params.slug)));
+// A custom split lets the shop answer a customer no use case covers, without
+// pretending they fit one. allocateBudget checks the categories and the total;
+// the priorities are checked here because only this route accepts them.
+function customSplit(allocations) {
+  if (allocations === undefined) return null;
+  if (!Array.isArray(allocations) || allocations.length !== CATEGORIES.length) throw badRequest('Provide one share for each of the seven categories.');
+  const priorities = new Set();
+  for (const row of allocations) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw badRequest('Each share needs a category, a percentage and a priority.');
+    if (!Number.isSafeInteger(row.priority) || row.priority < 1 || row.priority > CATEGORIES.length || priorities.has(row.priority)) {
+      throw badRequest('Use each priority from 1 to 7 exactly once.');
+    }
+    priorities.add(row.priority);
+  }
+  return allocations.map(row => ({ category: row.category, percent: row.percent, priority: row.priority }));
+}
+
 router.post('/allocations', async (req, res) => {
-  const profile = await loadProfile(req.body.profileSlug);
-  res.json(allocateBudget(req.body.budget, profile.allocations, req.body.locks ?? {}));
+  const custom = customSplit(req.body.allocations);
+  const allocations = custom ?? (await loadProfile(req.body.profileSlug)).allocations;
+  res.json(allocateBudget(req.body.budget, allocations, req.body.locks ?? {}));
 });
 router.post('/recommendations', async (req, res) => {
   const profile = await loadProfile(req.body.profileSlug);
@@ -86,4 +107,3 @@ router.post('/component-options', async (req, res) => {
   res.json(evaluateComponentOptions(components, items, config.settings));
 });
 export default router;
-

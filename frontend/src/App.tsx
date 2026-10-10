@@ -20,6 +20,9 @@ const BuildDetails = lazy(() => import('./pages/BuildDetails').then(module => ({
 const AdminReports = lazy(() => import('./pages/AdminReports').then(module => ({ default: module.AdminReports })));
 const AdminProfiles = lazy(() => import('./pages/AdminProfiles').then(module => ({ default: module.AdminProfiles })));
 const AdminRules = lazy(() => import('./pages/AdminRules').then(module => ({ default: module.AdminRules })));
+const AdminInquiries = lazy(() => import('./pages/AdminInquiries').then(module => ({ default: module.AdminInquiries })));
+const AdminPlanner = lazy(() => import('./pages/AdminPlanner').then(module => ({ default: module.AdminPlanner })));
+const RequestHelp = lazy(() => import('./pages/RequestHelp').then(module => ({ default: module.RequestHelp })));
 function CustomerOnly() {
   const location = useLocation();
   const { user } = useAuth();
@@ -42,9 +45,9 @@ function Application() {
     finally { setLoggingOut(false); }
   }
   const links: [string, string][] = user?.role === 'admin'
-    ? [['/admin/reports', 'Dashboard'], ['/admin/users', 'Users'], ['/admin/components', 'Catalog'], ['/admin/profiles', 'Use cases'], ['/admin/rules', 'Rules'], ['/components', 'Components']]
+    ? [['/admin/reports', 'Dashboard'], ['/admin/inquiries', 'Inquiries'], ['/admin/plan', 'Planner'], ['/admin/components', 'Catalog'], ['/admin/profiles', 'Use cases'], ['/admin/rules', 'Rules'], ['/admin/users', 'Users']]
     : user?.role === 'customer'
-      ? [['/', 'Overview'], ['/recommend', 'Find a build'], ['/builder', 'Planner'], ['/builds', 'Saved builds'], ['/components', 'Components']]
+      ? [['/', 'Overview'], ['/recommend', 'Find a build'], ['/builder', 'Planner'], ['/builds', 'Saved builds'], ['/help', 'Ask the shop'], ['/components', 'Components']]
       : [['/', 'Overview'], ['/components', 'Components'], ['/auth', 'Log in / Register']];
   return <><header className="site-header no-print"><div className="shell flex flex-wrap items-center justify-between gap-4 py-5">
     <Link to={user?.role === 'admin' ? '/admin/reports' : '/'} className="brand"><span className="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M8 3v3m4-3v3m4-3v3M8 18v3m4-3v3m4-3v3M3 8h3m-3 4h3m-3 4h3M18 8h3m-3 4h3m-3 4h3"/></svg></span> PC Build Planner</Link>
@@ -63,8 +66,9 @@ function Application() {
           <Route path="/builder" element={<Builder plan={plan} setPlan={setPlan}/>}/>
           <Route path="/builds" element={<SavedBuilds/>}/>
           <Route path="/builds/:id" element={<BuildDetails setPlan={setPlan}/>}/>
+          <Route path="/help" element={<RequestHelp/>}/>
         </Route>
-        <Route element={<AdminOnly/>}><Route path="/admin/reports" element={<AdminReports/>}/><Route path="/admin/users" element={<AdminUsers/>}/><Route path="/admin/components" element={<AdminComponents/>}/><Route path="/admin/profiles" element={<AdminProfiles/>}/><Route path="/admin/rules" element={<AdminRules/>}/></Route>
+        <Route element={<AdminOnly/>}><Route path="/admin/reports" element={<AdminReports/>}/><Route path="/admin/users" element={<AdminUsers/>}/><Route path="/admin/components" element={<AdminComponents/>}/><Route path="/admin/profiles" element={<AdminProfiles/>}/><Route path="/admin/rules" element={<AdminRules/>}/><Route path="/admin/inquiries" element={<AdminInquiries/>}/><Route path="/admin/plan" element={<AdminPlanner/>}/></Route>
         <Route path="*" element={<Navigate to="/" replace/>}/>
       </Routes></Suspense>}
     </main>

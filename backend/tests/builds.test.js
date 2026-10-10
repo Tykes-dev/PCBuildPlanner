@@ -113,8 +113,12 @@ test('saved build routes enforce customer ownership and preserve historical snap
   const input = { ...base, items: parts.slice(0, 2).map(part => ({ componentId: String(part._id), quantity: 1 })) };
   try {
     assert.equal((await request('', 'GET', undefined, false)).status, 401);
+    // Administrators plan builds too, for inquiry proposals and showcase builds.
+    // They are allowed in, but still only ever see their own records.
     identity.role = 'admin';
-    assert.equal((await request()).status, 403);
+    const asAdmin = await request();
+    assert.equal(asAdmin.status, 200);
+    assert.deepEqual(await asAdmin.json(), []);
     identity.role = 'customer';
     const invalid = await request('', 'POST', { ...input, owner: otherOwner, total: 1 });
     assert.equal(invalid.status, 400);
@@ -208,5 +212,3 @@ test('reopening an inactive profile chooses an active replacement, while submiss
   t.mock.method(AllocationProfile, 'findOne', () => ({ lean: async () => null }));
   await assert.rejects(() => resolveCurrentBuild(build), error => error.status === 409 && /No active/.test(error.message));
 });
-
-

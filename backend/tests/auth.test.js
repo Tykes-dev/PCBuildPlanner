@@ -81,7 +81,9 @@ test('registration, session lifecycle, customer enforcement, origins, and rate l
     assert.equal((await request('/profiles', undefined, cookie)).status, 200);
     assert.equal((await request('/auth/logout', {}, cookie, 'https://unrelated.example')).status, 403);
     users.get('alice@example.com').role = 'admin';
-    assert.equal((await request('/profiles', undefined, cookie)).status, 403);
+    // Administrators plan builds when answering an inquiry, so the planning
+    // engine is open to any signed-in account. Ownership-scoped routes are not.
+    assert.equal((await request('/profiles', undefined, cookie)).status, 200);
     users.get('alice@example.com').role = 'customer';
     const record = sessions.get(tokenHash(cookie.split('=')[1]));
     record.expiresAt = new Date(0);

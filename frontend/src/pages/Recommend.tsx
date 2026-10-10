@@ -8,6 +8,7 @@ import { recommendationSchema, type RecommendationInput } from '../schemas/recom
 import { Feedback } from '../components/Feedback';
 import { Checks, Parts } from '../components/BuildSummary';
 import { LABELS, pesos, type Plan, type Profile, type Recommendation } from '../types';
+const NOT_LISTED = '__not-listed';
 export function Recommend({ setPlan }: { setPlan: (plan: Plan) => void }) {
   const profiles = useApi<Profile[]>('/profiles');
   const [result, setResult] = useState<Recommendation | null>(null);
@@ -16,6 +17,8 @@ export function Recommend({ setPlan }: { setPlan: (plan: Plan) => void }) {
   const navigate = useNavigate();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RecommendationInput>({ resolver: zodResolver(recommendationSchema), defaultValues: { budget: 50000, profileSlug: 'gaming' } });
   async function submit(input: RecommendationInput) {
+    // No profile fits this customer, so the shop builds it by hand instead.
+    if (input.profileSlug === NOT_LISTED) { navigate('/help?budget=' + input.budget); return; }
     setError(''); setResult(null);
     try { const response = await api.post<Recommendation>('/recommendations', input); setResult(response.data); setSubmitted(input); }
     catch (e) { setError(errorMessage(e)); }
@@ -25,7 +28,7 @@ export function Recommend({ setPlan }: { setPlan: (plan: Plan) => void }) {
     {profiles.data && !profiles.data.length && <p className="notice warning">No use cases available. Seed the database first.</p>}
     {!!profiles.data?.length && <form className="panel grid md:grid-cols-[1fr_1fr_auto] gap-5 items-start mt-6" onSubmit={handleSubmit(submit)}>
       <label>Budget in pesos<input type="number" {...register('budget', { valueAsNumber: true })}/>{errors.budget && <span className="field-error">{errors.budget.message}</span>}</label>
-      <label>What will you use it for?<select {...register('profileSlug')}>{profiles.data.map(p => <option value={p.slug} key={p.slug}>{p.label}</option>)}</select>{errors.profileSlug && <span className="field-error">{errors.profileSlug.message}</span>}</label>
+      <label>What will you use it for?<select {...register('profileSlug')}>{profiles.data.map(p => <option value={p.slug} key={p.slug}>{p.label}</option>)}<option value={NOT_LISTED}>My use case is not listed…</option></select>{errors.profileSlug && <span className="field-error">{errors.profileSlug.message}</span>}</label>
       <button className="button mt-6" disabled={isSubmitting}>{isSubmitting ? 'Finding parts…' : 'Find my build ↗'}</button></form>}
     {error && <p className="notice error mt-5" role="alert">{error}</p>}
     {result && <div className="mt-6" aria-live="polite"><p className={`notice ${result.feasible ? 'note' : 'warning'}`}>{result.message}</p>

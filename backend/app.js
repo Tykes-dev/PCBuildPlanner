@@ -6,6 +6,8 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import buildsRoutes from './routes/builds.js';
 import requestRoutes from './routes/requests.js';
+import inquiryRoutes from './routes/inquiries.js';
+import adminInquiryRoutes from './routes/adminInquiries.js';
 import reportingRoutes from './routes/reporting.js';
 import { notFound, errorHandler } from './middleware/errors.js';
 const app = express();
@@ -23,13 +25,13 @@ app.use(express.json({ limit: '64kb' }));
 app.use((req, res, next) => { console.log(req.method + ' ' + req.path); next(); });
 app.get('/api/health', (req, res) => res.status(mongoose.connection.readyState === 1 ? 200 : 503).json({ database: mongoose.connection.readyState === 1 ? 'connected' : 'unavailable' }));
 app.use('/api/auth', authRoutes);
+app.use('/api/admin/inquiries', adminInquiryRoutes);
 app.use('/api/admin', reportingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/builds', buildsRoutes);
 app.use('/api/requests', requestRoutes);
+app.use('/api/inquiries', inquiryRoutes);
 app.use('/api', coreRoutes);
 app.use(notFound);
 app.use(errorHandler);
 export default app;
-
-
