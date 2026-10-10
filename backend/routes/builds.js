@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Build from '../models/Build.js';
+import BuildRequest from '../models/BuildRequest.js';
 import { requireCustomer } from '../middleware/auth.js';
 import {
   buildId, buildName, getOwnedBuild, prepareBuild, requireObject, resolveCurrentBuild, serializeBuild
@@ -40,6 +41,19 @@ router.patch('/:id', async (req, res) => {
   res.json(serializeBuild(build));
 });
 
+// A saved build belongs to one customer and nothing downstream depends on it:
+// a submitted request keeps its own immutable snapshot. Removing a build while
+// it is under review would leave the administrator reviewing a missing record,
+// so that case is refused instead.
+router.delete('/:id', async (req, res) => {
+  const build = await getOwnedBuild(req.params.id, req.user._id);
+  if (await BuildRequest.exists({ build: build._id, owner: req.user._id, active: true })) {
+    return res.status(409).json({ message: 'This build has a pending or approved request. Wait for the review to close before deleting it.' });
+  }
+  await Build.deleteOne({ _id: build._id, owner: req.user._id });
+  res.json({ message: 'Build deleted.' });
+});
+
 router.post('/:id/duplicate', async (req, res) => {
   requireObject(req.body, ['name']);
   const original = await getOwnedBuild(req.params.id, req.user._id);
@@ -63,4 +77,3 @@ router.post('/:id/reopen', async (req, res) => {
 });
 
 export default router;
-

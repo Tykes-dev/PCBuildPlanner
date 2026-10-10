@@ -1,4 +1,4 @@
-import { CATEGORIES } from '../models/Component.js';
+import { CATEGORIES, CATEGORY_LABELS } from '../models/Component.js';
 import { badRequest } from './errors.js';
 
 export function normalizeItems(items) {
@@ -35,25 +35,35 @@ export function validateBuild(items, settings = [], pairs = [], profile = null) 
   const margin = settings.find(s => s.code === 'PSU_WATTAGE_HEADROOM')?.marginPercent ?? 30;
   const power = calculatePower(normalized, margin);
   const issues = [];
-  const add = (code, severity, categories, fallback) => issues.push({ code, severity, categories,
-    message: settings.find(s => s.code === code)?.message || fallback });
+  const add = (code, severity, categories, fallback, detail = '') => issues.push({ code, severity, categories,
+    message: [settings.find(s => s.code === code)?.message || fallback, detail].filter(Boolean).join(' ') });
   if (!checkCpuSocket(parts.cpu, parts.motherboard)) add('CPU_SOCKET_MATCH', 'error', ['cpu', 'motherboard'], 'Processor and motherboard sockets do not match.');
   if (!checkMemoryType(parts.memory, parts.motherboard)) add('MEMORY_TYPE_MATCH', 'error', ['memory', 'motherboard'], 'Memory type does not match the motherboard.');
   if (!checkCaseFitsBoard(parts.case, parts.motherboard)) add('CASE_FITS_BOARD', 'error', ['case', 'motherboard'], 'The case cannot fit this motherboard.');
-  if (!checkPsuHeadroom(power)) add('PSU_WATTAGE_HEADROOM', 'error', ['psu'], `This build needs ${power.requiredWattage}W including the safety margin.`);
+  // The configured message explains the rule; the numbers explain this build.
+  if (!checkPsuHeadroom(power)) add('PSU_WATTAGE_HEADROOM', 'error', ['psu'],
+    'The power supply must cover the total draw plus the safety margin.',
+    `This build draws ${power.totalDraw}W, so it needs ${power.requiredWattage}W with ${power.marginPercent}% headroom. The chosen power supply provides ${power.supplyRating}W.`);
   // Hard checks always run, even if a stale database record says active:false.
   const memoryQuantity = normalized.find(i => i.component.category === 'memory')?.quantity ?? 0;
   if (parts.motherboard && memoryQuantity > parts.motherboard.memorySlots) add('MEMORY_SLOT_CAPACITY', 'error', ['memory', 'motherboard'], 'The memory quantity exceeds available motherboard slots.');
   for (const pair of pairs.filter(p => p.active)) {
     const a = parts[pair.categoryA], b = parts[pair.categoryB];
-    if (a && b && Math.abs(a.performanceScore - b.performanceScore) > pair.maxGap) issues.push({
-      code: 'PERFORMANCE_BALANCE', severity: 'warning', categories: [pair.categoryA, pair.categoryB],
-      message: `${pair.categoryA} and ${pair.categoryB} differ by ${Math.abs(a.performanceScore - b.performanceScore)} score points (limit ${pair.maxGap}). This is a rough balance indicator.` });
+    if (a && b && Math.abs(a.performanceScore - b.performanceScore) > pair.maxGap) {
+      // Naming the weaker part tells the customer what to change. The raw gap
+      // alone does not, and the category keys mean nothing outside the code.
+      const aStronger = a.performanceScore >= b.performanceScore;
+      const strong = CATEGORY_LABELS[aStronger ? pair.categoryA : pair.categoryB];
+      const weak = CATEGORY_LABELS[aStronger ? pair.categoryB : pair.categoryA];
+      const gap = Math.abs(a.performanceScore - b.performanceScore);
+      issues.push({ code: 'PERFORMANCE_BALANCE', severity: 'warning', categories: [pair.categoryA, pair.categoryB],
+        message: `Your ${strong} is much stronger than your ${weak}, so the ${weak} may hold this build back. Consider a better ${weak}, or spend less on the ${strong}. (Scores differ by ${gap}; this shop flags anything over ${pair.maxGap}. This is a rough guide, not a benchmark.)` });
+    }
   }
   for (const minimum of profile?.minimums ?? []) {
     const item = normalized.find(i => i.component.category === minimum.category);
     if (item && item.component[minimum.field] * item.quantity < minimum.value) issues.push({ code: 'PROFILE_MINIMUM', severity: 'note', categories: [minimum.category],
-      message: `${profile.label} recommends at least ${minimum.value}GB of ${minimum.category}.` });
+      message: `${profile.label} builds usually have at least ${minimum.value}GB of ${CATEGORY_LABELS[minimum.category]}. You can still save and submit this build.` });
   }
   const missingCategories = CATEGORIES.filter(c => !parts[c]);
   return { valid: !missingCategories.length && !issues.some(i => i.severity === 'error'), missingCategories, issues, power,

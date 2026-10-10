@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import BuildRequest from '../models/BuildRequest.js';
+import { CATEGORY_LABELS } from '../models/Component.js';
 import CheckSetting from '../models/CheckSetting.js';
 import BalancePair from '../models/BalancePair.js';
 import { requireCustomer, databaseReady } from '../middleware/auth.js';
@@ -21,7 +22,7 @@ router.post('/', async (req, res) => {
   ]);
   const validation = validateBuild(items, settings, pairs, profile);
   if (!validation.valid) {
-    const reasons = [validation.missingCategories.length ? 'Complete the missing categories: ' + validation.missingCategories.join(', ') + '.' : '',
+    const reasons = [validation.missingCategories.length ? 'Still to choose: ' + validation.missingCategories.map(category => CATEGORY_LABELS[category]).join(', ') + '.' : '',
       ...validation.issues.filter(issue => issue.severity === 'error').map(issue => issue.message)].filter(Boolean);
     return res.status(409).json({ message: 'This build is not ready to submit. ' + reasons.join(' '), validation });
   }
@@ -36,4 +37,3 @@ router.post('/', async (req, res) => {
   }
 });
 export default router;
-

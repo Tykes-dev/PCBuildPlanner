@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 export const CATEGORIES = ['cpu', 'motherboard', 'memory', 'gpu', 'storage', 'case', 'psu'];
+// Customer-facing names. Messages must never show the raw category keys.
+export const CATEGORY_LABELS = { cpu: 'processor', motherboard: 'motherboard', memory: 'memory', gpu: 'graphics card', storage: 'storage', case: 'case', psu: 'power supply' };
 const requiredFor = (...categories) => function () { return categories.includes(this.category); };
 const schema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },

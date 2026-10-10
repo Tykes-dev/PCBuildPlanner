@@ -2,7 +2,9 @@ import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { isAxiosError } from 'axios';
 import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/axios';
-import { CATEGORIES, LABELS, type Category, type Component } from '../types';
+import { useApi } from '../hooks/useApi';
+import { Feedback } from '../components/Feedback';
+import { CATEGORIES, LABELS, pesos, type Category, type Component } from '../types';
 
 const SOCKETS = ['AM4', 'AM5', 'LGA1700', 'LGA1851'];
 const MEMORY_TYPES = ['DDR4', 'DDR5'];
@@ -26,6 +28,23 @@ const EMPTY_FORM: FormValues = {
   storageType: '', wattageRating: '', supportedFormFactors: []
 };
 
+const text = (value: unknown) => value === undefined || value === null ? '' : String(value);
+
+// Catalog records store numbers; the form holds strings so empty inputs stay empty.
+function toForm(component: Component): FormValues {
+  return {
+    name: component.name, brand: component.brand, category: component.category,
+    price: text(component.price), performanceScore: text(component.performanceScore),
+    powerDraw: text(component.powerDraw ?? 0), stock: text(component.stock ?? 0),
+    availability: component.availability || 'not tracked',
+    imageUrl: component.imageUrl || '', imageSource: component.imageSource || '', imageCaption: component.imageCaption || '',
+    socket: component.socket || '', memoryType: component.memoryType || '',
+    formFactor: component.formFactor || '', memorySlots: text(component.memorySlots),
+    capacityGb: text(component.capacityGb), storageType: component.storageType || '',
+    wattageRating: text(component.wattageRating), supportedFormFactors: component.supportedFormFactors || []
+  };
+}
+
 function Field({ name, label, error, help, children }: {
   name: string; label: string; error?: string; help?: string; children: ReactNode;
 }) {
@@ -38,17 +57,43 @@ function Field({ name, label, error, help, children }: {
 }
 
 export function AdminComponents() {
+  const catalog = useApi<Component[]>('/admin/components');
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [fields, setFields] = useState<FieldErrors>({});
   const [error, setError] = useState('');
-  const [createdName, setCreatedName] = useState('');
+  const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+  const [listCategory, setListCategory] = useState<'all' | Category>('all');
+  const [listSearch, setListSearch] = useState('');
   const submitting = useRef(false);
+  const formSection = useRef<HTMLFormElement>(null);
+
+  const term = listSearch.trim().toLowerCase();
+  const visible = (catalog.data || []).filter(component =>
+    (listCategory === 'all' || component.category === listCategory)
+    && (!term || component.name.toLowerCase().includes(term) || component.brand.toLowerCase().includes(term)));
+  const archivedCount = (catalog.data || []).filter(component => component.archived).length;
 
   function update<K extends keyof FormValues>(name: K, value: FormValues[K]) {
     setForm(current => ({ ...current, [name]: value }));
     setFields(current => name === 'category' ? {} : { ...current, [name]: undefined });
-    setCreatedName('');
+    setFeedback('');
+  }
+
+  function startEdit(component: Component) {
+    setEditingId(component._id);
+    setForm(toForm(component));
+    setFields({}); setError(''); setFeedback(''); setConfirmId(null);
+    formSection.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFields({}); setError(''); setFeedback('');
   }
 
   function input(name: InputName, type = 'text', options: {
@@ -71,10 +116,32 @@ export function AdminComponents() {
     </select>;
   }
 
+  async function archive(component: Component) {
+    setError(''); setFeedback(''); setRowBusyId(component._id);
+    try {
+      const response = await api.delete<{ message: string }>('/admin/components/' + component._id);
+      setFeedback(response.data.message);
+      setConfirmId(null);
+      if (editingId === component._id) cancelEdit();
+      catalog.retry();
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setRowBusyId(null); }
+  }
+
+  async function restore(component: Component) {
+    setError(''); setFeedback(''); setRowBusyId(component._id);
+    try {
+      const response = await api.patch<{ message: string }>('/admin/components/' + component._id + '/restore');
+      setFeedback(response.data.message);
+      catalog.retry();
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setRowBusyId(null); }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current) return;
-    setError(''); setCreatedName('');
+    setError(''); setFeedback('');
     const errors: FieldErrors = {};
     if (!form.name.trim()) errors.name = 'Enter a component name.';
     if (!form.brand.trim()) errors.brand = 'Enter a brand.';
@@ -107,12 +174,12 @@ export function AdminComponents() {
     };
     if (imageUrl) {
       const localImage = imageUrl.startsWith('/images/components/') && imageUrl.length > '/images/components/'.length
-        && !/[\\\\\s]/.test(imageUrl) && !imageUrl.split(/[/?#]/).includes('..');
+        && !/[\\\s]/.test(imageUrl) && !imageUrl.split(/[/?#]/).includes('..');
       if (!localImage && !validHttpsUrl(imageUrl)) errors.imageUrl = 'Use an HTTPS image URL or a valid /images/components/ path.';
     }
     if (form.imageSource.trim() && !validHttpsUrl(form.imageSource.trim())) errors.imageSource = 'Use a valid HTTPS source URL.';
     setFields(errors);
-    if (Object.keys(errors).length) { setError('Check the highlighted fields before adding the component.'); return; }
+    if (Object.keys(errors).length) { setError('Check the highlighted fields before saving the component.'); return; }
 
     const payload: Record<string, unknown> = {
       name: form.name.trim(), brand: form.brand.trim(), category: form.category,
@@ -130,10 +197,15 @@ export function AdminComponents() {
 
     submitting.current = true; setBusy(true);
     try {
-      const response = await api.post<Component>('/admin/components', payload);
-      setCreatedName(response.data.name || form.name.trim());
+      const response = editingId
+        ? await api.put<Component>('/admin/components/' + editingId, payload)
+        : await api.post<Component>('/admin/components', payload);
+      const savedName = response.data.name || form.name.trim();
+      setFeedback(editingId ? savedName + ' was updated.' : savedName + ' was added to the catalog.');
+      setEditingId(null);
       setForm({ ...EMPTY_FORM, category: form.category });
       setFields({});
+      catalog.retry();
     } catch (failure) {
       setError(errorMessage(failure));
       if (isAxiosError(failure) && failure.response?.data?.fields) {
@@ -146,19 +218,20 @@ export function AdminComponents() {
 
   return <section className="max-w-4xl mx-auto">
     <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div><span className="eyebrow">ADMINISTRATION</span><h1>Add components.</h1>
-        <p className="intro !mb-0">Add a part to the catalog with its price, availability, and compatibility details.</p></div>
-      <Link className="button secondary" to="/components">View catalog <span aria-hidden="true">↗</span></Link>
+      <div><span className="eyebrow">ADMINISTRATION</span><h1>Manage the catalog.</h1>
+        <p className="intro !mb-0">Add parts, correct their details, and archive the ones you no longer sell.</p></div>
+      <Link className="button secondary" to="/components">View public catalog <span aria-hidden="true">↗</span></Link>
     </div>
     {error && <p role="alert" className="notice error mb-5">{error}</p>}
-    {createdName && <div role="status" className="notice note mb-5">
-      <p><strong>{createdName}</strong> was added to the catalog.</p>
-      <Link className="underline underline-offset-4 inline-block mt-2" to="/components">View the component catalog</Link>
-    </div>}
-    <form className="grid gap-6" onSubmit={submit}>
+    {feedback && <p role="status" className="notice note mb-5">{feedback}</p>}
+
+    <form ref={formSection} className="grid gap-6" onSubmit={submit}>
       <fieldset disabled={busy} className="panel min-w-0">
         <legend className="sr-only">Component details</legend>
-        <h2>Component details</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2>{editingId ? 'Edit component' : 'Component details'}</h2>
+          {editingId && <button type="button" className="button secondary" onClick={cancelEdit} disabled={busy}>Cancel edit</button>}
+        </div>
         <p className="text-sm text-muted mt-2 mb-5">All fields in this section are required.</p>
         <div className="grid sm:grid-cols-2 gap-5">
           <Field name="category" label="Category" error={fields.category}>
@@ -214,10 +287,52 @@ export function AdminComponents() {
         </div>
       </fieldset>
       <div className="flex flex-wrap gap-4 items-center">
-        <button type="submit" className="button light w-full sm:w-auto" disabled={busy}>{busy ? 'Adding component…' : 'Add component'}<span aria-hidden="true">＋</span></button>
+        <button type="submit" className="button light w-full sm:w-auto" disabled={busy}>{busy ? 'Saving…' : editingId ? 'Save changes' : 'Add component'}<span aria-hidden="true">{editingId ? '✓' : '＋'}</span></button>
         {busy && <p role="status" className="text-sm text-muted">Saving to the catalog…</p>}
       </div>
     </form>
+
+    <section className="mt-12">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+        <div><h2>Catalog parts</h2>
+          <p className="text-sm text-muted mt-2">{catalog.data ? catalog.data.length + ' parts, ' + archivedCount + ' archived' : 'Loading the catalog…'}</p></div>
+        <div className="flex flex-wrap gap-3">
+          <label className="w-full sm:w-44">Category<select value={listCategory} onChange={event => setListCategory(event.target.value as 'all' | Category)}>
+            <option value="all">All categories</option>
+            {CATEGORIES.map(category => <option key={category} value={category}>{LABELS[category]}</option>)}
+          </select></label>
+          <label className="w-full sm:w-56">Search<input type="search" placeholder="Name or brand" value={listSearch} onChange={event => setListSearch(event.target.value)}/></label>
+        </div>
+      </div>
+      <Feedback loading={catalog.loading} error={catalog.error} retry={catalog.retry}/>
+      {catalog.data && (!visible.length
+        ? <p className="notice note">{catalog.data.length ? 'No parts match this filter. Try another category or search.' : 'The catalog is empty. Add your first component with the form above.'}</p>
+        : <ul className="space-y-3">
+          {visible.map(component => <li className="panel" key={component._id}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3 className="text-base break-words">{component.name}</h3>
+                  {component.archived && <span className="tag">Archived</span>}
+                </div>
+                <p className="text-sm text-muted mt-2">{component.brand} · {LABELS[component.category]} · {pesos(component.price)} · {component.availability}</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button type="button" className="button secondary" onClick={() => startEdit(component)} disabled={busy || rowBusyId === component._id}>Edit</button>
+                {component.archived
+                  ? <button type="button" className="button secondary" onClick={() => restore(component)} disabled={rowBusyId === component._id}>{rowBusyId === component._id ? 'Restoring…' : 'Restore'}</button>
+                  : <button type="button" className="button secondary" onClick={() => setConfirmId(component._id)} disabled={rowBusyId === component._id}>Archive</button>}
+              </div>
+            </div>
+            {confirmId === component._id && <div className="notice warning mt-4" role="alertdialog" aria-label={'Confirm archiving ' + component.name}>
+              <p className="text-sm">Archive <strong>{component.name}</strong>? It will be removed from the catalog, the planner and recommendations. Saved builds that already include it keep their history, and you can restore it later.</p>
+              <div className="flex flex-wrap gap-3 mt-4">
+                <button type="button" className="button" onClick={() => archive(component)} disabled={rowBusyId === component._id}>{rowBusyId === component._id ? 'Archiving…' : 'Yes, archive it'}</button>
+                <button type="button" className="button secondary" onClick={() => setConfirmId(null)} disabled={rowBusyId === component._id}>Cancel</button>
+              </div>
+            </div>}
+          </li>)}
+        </ul>)}
+    </section>
   </section>;
 }
-

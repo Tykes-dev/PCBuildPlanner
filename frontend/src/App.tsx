@@ -18,6 +18,8 @@ import { errorMessage } from './api/axios';
 const SavedBuilds = lazy(() => import('./pages/SavedBuilds').then(module => ({ default: module.SavedBuilds })));
 const BuildDetails = lazy(() => import('./pages/BuildDetails').then(module => ({ default: module.BuildDetails })));
 const AdminReports = lazy(() => import('./pages/AdminReports').then(module => ({ default: module.AdminReports })));
+const AdminProfiles = lazy(() => import('./pages/AdminProfiles').then(module => ({ default: module.AdminProfiles })));
+const AdminRules = lazy(() => import('./pages/AdminRules').then(module => ({ default: module.AdminRules })));
 function CustomerOnly() {
   const location = useLocation();
   const { user } = useAuth();
@@ -40,7 +42,7 @@ function Application() {
     finally { setLoggingOut(false); }
   }
   const links: [string, string][] = user?.role === 'admin'
-    ? [['/admin/reports', 'Dashboard'], ['/admin/users', 'Users'], ['/admin/components', 'Add component'], ['/components', 'Components']]
+    ? [['/admin/reports', 'Dashboard'], ['/admin/users', 'Users'], ['/admin/components', 'Catalog'], ['/admin/profiles', 'Use cases'], ['/admin/rules', 'Rules'], ['/components', 'Components']]
     : user?.role === 'customer'
       ? [['/', 'Overview'], ['/recommend', 'Find a build'], ['/builder', 'Planner'], ['/builds', 'Saved builds'], ['/components', 'Components']]
       : [['/', 'Overview'], ['/components', 'Components'], ['/auth', 'Log in / Register']];
@@ -62,7 +64,7 @@ function Application() {
           <Route path="/builds" element={<SavedBuilds/>}/>
           <Route path="/builds/:id" element={<BuildDetails setPlan={setPlan}/>}/>
         </Route>
-        <Route element={<AdminOnly/>}><Route path="/admin/reports" element={<AdminReports/>}/><Route path="/admin/users" element={<AdminUsers/>}/><Route path="/admin/components" element={<AdminComponents/>}/></Route>
+        <Route element={<AdminOnly/>}><Route path="/admin/reports" element={<AdminReports/>}/><Route path="/admin/users" element={<AdminUsers/>}/><Route path="/admin/components" element={<AdminComponents/>}/><Route path="/admin/profiles" element={<AdminProfiles/>}/><Route path="/admin/rules" element={<AdminRules/>}/></Route>
         <Route path="*" element={<Navigate to="/" replace/>}/>
       </Routes></Suspense>}
     </main>
@@ -74,6 +76,3 @@ function AccountWorkspace() {
   return <Application key={(user ? user.id + ':' + user.role : 'guest')}/>;
 }
 export default function App() { return <AuthProvider><AccountWorkspace/></AuthProvider>; }
-
-
-
