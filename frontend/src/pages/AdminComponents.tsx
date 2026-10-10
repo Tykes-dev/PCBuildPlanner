@@ -3,6 +3,9 @@ import { isAxiosError } from 'axios';
 import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/axios';
 import { useApi } from '../hooks/useApi';
+import { useTableState } from '../hooks/useTableState';
+import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { Drawer } from '../components/Drawer';
 import { Feedback } from '../components/Feedback';
 import { CATEGORIES, LABELS, pesos, type Category, type Component } from '../types';
 
@@ -21,16 +24,15 @@ interface FormValues {
 }
 type FieldErrors = Partial<Record<keyof FormValues, string>>;
 type InputName = Exclude<keyof FormValues, 'category' | 'supportedFormFactors'>;
+
 const EMPTY_FORM: FormValues = {
   name: '', brand: '', category: 'cpu', price: '', performanceScore: '', powerDraw: '0',
   stock: '0', availability: 'not tracked', imageUrl: '', imageSource: '', imageCaption: '',
   socket: '', memoryType: '', formFactor: '', memorySlots: '', capacityGb: '',
   storageType: '', wattageRating: '', supportedFormFactors: []
 };
-
 const text = (value: unknown) => value === undefined || value === null ? '' : String(value);
 
-// Catalog records store numbers; the form holds strings so empty inputs stay empty.
 function toForm(component: Component): FormValues {
   return {
     name: component.name, brand: component.brand, category: component.category,
@@ -44,6 +46,15 @@ function toForm(component: Component): FormValues {
     wattageRating: text(component.wattageRating), supportedFormFactors: component.supportedFormFactors || []
   };
 }
+
+const searchText = (row: Component) => [row.name, row.brand, LABELS[row.category], row.socket, row.memoryType, row.storageType].filter(Boolean).join(' ');
+const sortValues = {
+  name: (row: Component) => row.name.toLowerCase(),
+  category: (row: Component) => LABELS[row.category],
+  price: (row: Component) => row.price,
+  performanceScore: (row: Component) => row.performanceScore,
+  stock: (row: Component) => row.stock ?? -1
+};
 
 function Field({ name, label, error, help, children }: {
   name: string; label: string; error?: string; help?: string; children: ReactNode;
@@ -60,40 +71,35 @@ export function AdminComponents() {
   const catalog = useApi<Component[]>('/admin/components');
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [fields, setFields] = useState<FieldErrors>({});
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Component | null>(null);
+  const [confirm, setConfirm] = useState<Component | null>(null);
   const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
-  const [listCategory, setListCategory] = useState<'all' | Category>('all');
-  const [listSearch, setListSearch] = useState('');
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [category, setCategory] = useState<'' | Category>('');
+  const [state, setState] = useState<'' | 'active' | 'archived'>('');
   const submitting = useRef(false);
-  const formSection = useRef<HTMLFormElement>(null);
 
-  const term = listSearch.trim().toLowerCase();
-  const visible = (catalog.data || []).filter(component =>
-    (listCategory === 'all' || component.category === listCategory)
-    && (!term || component.name.toLowerCase().includes(term) || component.brand.toLowerCase().includes(term)));
-  const archivedCount = (catalog.data || []).filter(component => component.archived).length;
+  const rows = (catalog.data || []).filter(row =>
+    (!category || row.category === category)
+    && (!state || (state === 'archived' ? row.archived : !row.archived)));
+  const table = useTableState<Component>({ rows, searchText, sortValues, initialSort: { key: 'name', direction: 'asc' } });
+  const archivedCount = (catalog.data || []).filter(row => row.archived).length;
 
   function update<K extends keyof FormValues>(name: K, value: FormValues[K]) {
     setForm(current => ({ ...current, [name]: value }));
     setFields(current => name === 'category' ? {} : { ...current, [name]: undefined });
-    setFeedback('');
+    setFormError('');
   }
 
-  function startEdit(component: Component) {
-    setEditingId(component._id);
-    setForm(toForm(component));
-    setFields({}); setError(''); setFeedback(''); setConfirmId(null);
-    formSection.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setFields({}); setError(''); setFeedback('');
+  function openForm(component?: Component) {
+    setEditing(component || null);
+    setForm(component ? toForm(component) : EMPTY_FORM);
+    setFields({}); setFormError(''); setFeedback(''); setError('');
+    setFormOpen(true);
   }
 
   function input(name: InputName, type = 'text', options: {
@@ -116,32 +122,21 @@ export function AdminComponents() {
     </select>;
   }
 
-  async function archive(component: Component) {
-    setError(''); setFeedback(''); setRowBusyId(component._id);
+  async function act(component: Component, run: () => Promise<{ data: { message?: string } }>, fallback: string) {
+    setError(''); setFeedback(''); setRowBusy(component._id);
     try {
-      const response = await api.delete<{ message: string }>('/admin/components/' + component._id);
-      setFeedback(response.data.message);
-      setConfirmId(null);
-      if (editingId === component._id) cancelEdit();
+      const response = await run();
+      setFeedback(response.data.message || fallback);
+      setConfirm(null);
       catalog.retry();
     } catch (failure) { setError(errorMessage(failure)); }
-    finally { setRowBusyId(null); }
-  }
-
-  async function restore(component: Component) {
-    setError(''); setFeedback(''); setRowBusyId(component._id);
-    try {
-      const response = await api.patch<{ message: string }>('/admin/components/' + component._id + '/restore');
-      setFeedback(response.data.message);
-      catalog.retry();
-    } catch (failure) { setError(errorMessage(failure)); }
-    finally { setRowBusyId(null); }
+    finally { setRowBusy(null); }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current) return;
-    setError(''); setFeedback('');
+    setFormError('');
     const errors: FieldErrors = {};
     if (!form.name.trim()) errors.name = 'Enter a component name.';
     if (!form.brand.trim()) errors.brand = 'Enter a brand.';
@@ -153,12 +148,8 @@ export function AdminComponents() {
     };
     numeric('price', 0); numeric('performanceScore', 0, 100); numeric('powerDraw', 0); numeric('stock', 0, undefined, true);
     if (!AVAILABILITY.includes(form.availability)) errors.availability = 'Choose an availability status.';
-    if (form.category === 'cpu' || form.category === 'motherboard') {
-      if (!SOCKETS.includes(form.socket)) errors.socket = 'Choose a supported socket.';
-    }
-    if (form.category === 'motherboard' || form.category === 'memory') {
-      if (!MEMORY_TYPES.includes(form.memoryType)) errors.memoryType = 'Choose a memory type.';
-    }
+    if ((form.category === 'cpu' || form.category === 'motherboard') && !SOCKETS.includes(form.socket)) errors.socket = 'Choose a supported socket.';
+    if ((form.category === 'motherboard' || form.category === 'memory') && !MEMORY_TYPES.includes(form.memoryType)) errors.memoryType = 'Choose a memory type.';
     if (form.category === 'motherboard') {
       if (!FORM_FACTORS.includes(form.formFactor)) errors.formFactor = 'Choose a motherboard size.';
       numeric('memorySlots', 1, undefined, true);
@@ -179,7 +170,7 @@ export function AdminComponents() {
     }
     if (form.imageSource.trim() && !validHttpsUrl(form.imageSource.trim())) errors.imageSource = 'Use a valid HTTPS source URL.';
     setFields(errors);
-    if (Object.keys(errors).length) { setError('Check the highlighted fields before saving the component.'); return; }
+    if (Object.keys(errors).length) { setFormError('Check the highlighted fields before saving.'); return; }
 
     const payload: Record<string, unknown> = {
       name: form.name.trim(), brand: form.brand.trim(), category: form.category,
@@ -197,17 +188,14 @@ export function AdminComponents() {
 
     submitting.current = true; setBusy(true);
     try {
-      const response = editingId
-        ? await api.put<Component>('/admin/components/' + editingId, payload)
+      const response = editing
+        ? await api.put<Component>('/admin/components/' + editing._id, payload)
         : await api.post<Component>('/admin/components', payload);
-      const savedName = response.data.name || form.name.trim();
-      setFeedback(editingId ? savedName + ' was updated.' : savedName + ' was added to the catalog.');
-      setEditingId(null);
-      setForm({ ...EMPTY_FORM, category: form.category });
-      setFields({});
+      setFeedback((response.data.name || form.name.trim()) + (editing ? ' was updated.' : ' was added to the catalog.'));
+      setFormOpen(false); setEditing(null); setForm(EMPTY_FORM); setFields({});
       catalog.retry();
     } catch (failure) {
-      setError(errorMessage(failure));
+      setFormError(errorMessage(failure));
       if (isAxiosError(failure) && failure.response?.data?.fields) {
         const responseFields = failure.response.data.fields as Record<string, unknown>;
         setFields(Object.fromEntries(Object.entries(responseFields)
@@ -216,123 +204,132 @@ export function AdminComponents() {
     } finally { submitting.current = false; setBusy(false); }
   }
 
-  return <section className="max-w-4xl mx-auto">
-    <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div><span className="eyebrow">ADMINISTRATION</span><h1>Manage the catalog.</h1>
-        <p className="intro !mb-0">Add parts, correct their details, and archive the ones you no longer sell.</p></div>
-      <Link className="button secondary" to="/components">View public catalog <span aria-hidden="true">↗</span></Link>
+  const columns: DataTableColumn<Component>[] = [
+    { key: 'name', header: 'Component', sortable: true, render: row => <>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-medium break-words">{row.name}</p>
+        {row.archived && <span className="tag">Archived</span>}
+      </div>
+      <p className="text-xs text-muted mt-1">{row.brand}</p>
+    </> },
+    { key: 'category', header: 'Category', sortable: true, hideBelow: 'sm', render: row => LABELS[row.category] },
+    { key: 'price', header: 'Price', sortable: true, align: 'right', render: row => pesos(row.price) },
+    { key: 'performanceScore', header: 'Score', sortable: true, align: 'right', hideBelow: 'lg', render: row => row.performanceScore },
+    { key: 'stock', header: 'Availability', sortable: true, hideBelow: 'md', render: row => <>
+      <p className="text-xs">{row.availability}</p>
+      {row.availability === 'in stock' && <p className="text-xs text-muted">{row.stock} in stock</p>}
+    </> },
+    { key: 'actions', header: 'Actions', align: 'right', render: row => <div className="flex flex-wrap justify-end gap-2">
+      <button type="button" className="button secondary !py-1.5" onClick={() => openForm(row)} disabled={rowBusy === row._id}>Edit</button>
+      {row.archived
+        ? <button type="button" className="button secondary !py-1.5" disabled={rowBusy === row._id}
+            onClick={() => act(row, () => api.patch('/admin/components/' + row._id + '/restore'), 'Component restored.')}>Restore</button>
+        : <button type="button" className="button secondary !py-1.5" onClick={() => setConfirm(row)} disabled={rowBusy === row._id}>Archive</button>}
+    </div> }
+  ];
+
+  return <section>
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div><span className="eyebrow">ADMINISTRATION</span><h1>Catalog.</h1></div>
+      <Link className="button secondary" to="/components">Public catalog <span aria-hidden="true">↗</span></Link>
     </div>
-    {error && <p role="alert" className="notice error mb-5">{error}</p>}
-    {feedback && <p role="status" className="notice note mb-5">{feedback}</p>}
+    <p className="intro">Every part the planner can choose from. {catalog.data ? `${catalog.data.length} parts, ${archivedCount} archived.` : ''}</p>
 
-    <form ref={formSection} className="grid gap-6" onSubmit={submit}>
-      <fieldset disabled={busy} className="panel min-w-0">
-        <legend className="sr-only">Component details</legend>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2>{editingId ? 'Edit component' : 'Component details'}</h2>
-          {editingId && <button type="button" className="button secondary" onClick={cancelEdit} disabled={busy}>Cancel edit</button>}
-        </div>
-        <p className="text-sm text-muted mt-2 mb-5">All fields in this section are required.</p>
-        <div className="grid sm:grid-cols-2 gap-5">
-          <Field name="category" label="Category" error={fields.category}>
-            <select id="component-category" name="category" value={form.category} onChange={event => update('category', event.target.value as Category)} required>
-              {CATEGORIES.map(category => <option key={category} value={category}>{LABELS[category]}</option>)}
-            </select>
-          </Field>
-          <Field name="brand" label="Brand" error={fields.brand}>{input('brand', 'text', { maxLength: 120 })}</Field>
-          <div className="sm:col-span-2"><Field name="name" label="Component name" error={fields.name}>{input('name', 'text', { maxLength: 120 })}</Field></div>
-          <Field name="price" label="Price (PHP)" error={fields.price}>{input('price', 'number', { min: 0, step: '0.01' })}</Field>
-          <Field name="performanceScore" label="Performance score (0–100)" error={fields.performanceScore}>{input('performanceScore', 'number', { min: 0, max: 100, step: 'any' })}</Field>
-          <Field name="powerDraw" label="Power draw (watts)" error={fields.powerDraw}>{input('powerDraw', 'number', { min: 0, step: 'any' })}</Field>
-          <Field name="availability" label="Availability" error={fields.availability}>{select('availability', AVAILABILITY)}</Field>
-          <Field name="stock" label="Stock quantity" error={fields.stock}>{input('stock', 'number', { min: 0, step: '1' })}</Field>
-        </div>
-      </fieldset>
+    {error && <p role="alert" className="notice error mb-4">{error}</p>}
+    {feedback && <p role="status" className="notice note mb-4">{feedback}</p>}
 
-      {form.category !== 'gpu' && <fieldset disabled={busy} className="panel min-w-0">
-        <legend className="sr-only">Compatibility specifications</legend>
-        <h2>Compatibility specifications</h2>
-        <p className="text-sm text-muted mt-2 mb-5">These details help the planner match compatible parts.</p>
-        <div className="grid sm:grid-cols-2 gap-5">
-          {(form.category === 'cpu' || form.category === 'motherboard') && <Field name="socket" label="CPU socket" error={fields.socket}>{select('socket', SOCKETS)}</Field>}
-          {(form.category === 'memory' || form.category === 'motherboard') && <Field name="memoryType" label="Memory type" error={fields.memoryType}>{select('memoryType', MEMORY_TYPES)}</Field>}
-          {form.category === 'motherboard' && <>
-            <Field name="formFactor" label="Motherboard size" error={fields.formFactor}>{select('formFactor', FORM_FACTORS)}</Field>
-            <Field name="memorySlots" label="Memory slots" error={fields.memorySlots}>{input('memorySlots', 'number', { min: 1, step: '1' })}</Field>
-          </>}
-          {(form.category === 'memory' || form.category === 'storage') && <Field name="capacityGb" label="Capacity (GB)" error={fields.capacityGb}>{input('capacityGb', 'number', { min: 1, step: 'any' })}</Field>}
-          {form.category === 'storage' && <Field name="storageType" label="Storage type" error={fields.storageType}>{select('storageType', STORAGE_TYPES)}</Field>}
-          {form.category === 'psu' && <Field name="wattageRating" label="Power supply rating (watts)" error={fields.wattageRating}>{input('wattageRating', 'number', { min: 1, step: 'any' })}</Field>}
-          {form.category === 'case' && <div className="sm:col-span-2">
-            <fieldset aria-describedby={fields.supportedFormFactors ? 'supportedFormFactors-error' : undefined}>
-              <legend className="text-sm font-medium">Supported motherboard sizes</legend>
-              <div className="flex flex-wrap gap-3 mt-3">{FORM_FACTORS.map(size => <label key={size} className="flex items-center gap-3 rounded-lg border border-stroke px-4 py-3 bg-control">
-                <input className="!w-4 !h-4 !m-0" type="checkbox" value={size} checked={form.supportedFormFactors.includes(size)}
-                  onChange={event => update('supportedFormFactors', event.target.checked ? [...form.supportedFormFactors, size] : form.supportedFormFactors.filter(item => item !== size))}/>
-                {size}
-              </label>)}</div>
-              {fields.supportedFormFactors && <p id="supportedFormFactors-error" role="alert" className="field-error">{fields.supportedFormFactors}</p>}
-            </fieldset>
-          </div>}
-        </div>
-      </fieldset>}
-
-      <fieldset disabled={busy} className="panel min-w-0">
-        <legend className="sr-only">Optional product image</legend>
-        <h2>Product image <span className="text-sm text-muted font-normal">(optional)</span></h2>
-        <div className="grid gap-5 mt-5">
-          <Field name="imageUrl" label="Image URL or local path" error={fields.imageUrl} help="Use an HTTPS image URL or an existing /images/components/ path.">{input('imageUrl', 'text', { required: false, maxLength: 2000, help: true })}</Field>
-          <Field name="imageSource" label="Image source URL" error={fields.imageSource} help="An HTTPS link to the manufacturer or original image source.">{input('imageSource', 'url', { required: false, maxLength: 2000, help: true })}</Field>
-          <Field name="imageCaption" label="Image caption" error={fields.imageCaption}>{input('imageCaption', 'text', { required: false, maxLength: 200 })}</Field>
-        </div>
-      </fieldset>
-      <div className="flex flex-wrap gap-4 items-center">
-        <button type="submit" className="button light w-full sm:w-auto" disabled={busy}>{busy ? 'Saving…' : editingId ? 'Save changes' : 'Add component'}<span aria-hidden="true">{editingId ? '✓' : '＋'}</span></button>
-        {busy && <p role="status" className="text-sm text-muted">Saving to the catalog…</p>}
-      </div>
-    </form>
-
-    <section className="mt-12">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
-        <div><h2>Catalog parts</h2>
-          <p className="text-sm text-muted mt-2">{catalog.data ? catalog.data.length + ' parts, ' + archivedCount + ' archived' : 'Loading the catalog…'}</p></div>
-        <div className="flex flex-wrap gap-3">
-          <label className="w-full sm:w-44">Category<select value={listCategory} onChange={event => setListCategory(event.target.value as 'all' | Category)}>
-            <option value="all">All categories</option>
-            {CATEGORIES.map(category => <option key={category} value={category}>{LABELS[category]}</option>)}
+    <Feedback loading={catalog.loading} error={catalog.error} retry={catalog.retry}/>
+    {catalog.data && <DataTable
+      table={table} columns={columns} rowKey={row => row._id}
+      label="Catalog components" searchPlaceholder="Name, brand or specification"
+      empty="The catalog is empty. Add your first component."
+      filters={<>
+        <label className="w-full sm:w-44"><span className="text-xs">Category</span>
+          <select value={category} onChange={event => setCategory(event.target.value as '' | Category)}>
+            <option value="">All categories</option>
+            {CATEGORIES.map(value => <option key={value} value={value}>{LABELS[value]}</option>)}
           </select></label>
-          <label className="w-full sm:w-56">Search<input type="search" placeholder="Name or brand" value={listSearch} onChange={event => setListSearch(event.target.value)}/></label>
-        </div>
-      </div>
-      <Feedback loading={catalog.loading} error={catalog.error} retry={catalog.retry}/>
-      {catalog.data && (!visible.length
-        ? <p className="notice note">{catalog.data.length ? 'No parts match this filter. Try another category or search.' : 'The catalog is empty. Add your first component with the form above.'}</p>
-        : <ul className="space-y-3">
-          {visible.map(component => <li className="panel" key={component._id}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h3 className="text-base break-words">{component.name}</h3>
-                  {component.archived && <span className="tag">Archived</span>}
-                </div>
-                <p className="text-sm text-muted mt-2">{component.brand} · {LABELS[component.category]} · {pesos(component.price)} · {component.availability}</p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" className="button secondary" onClick={() => startEdit(component)} disabled={busy || rowBusyId === component._id}>Edit</button>
-                {component.archived
-                  ? <button type="button" className="button secondary" onClick={() => restore(component)} disabled={rowBusyId === component._id}>{rowBusyId === component._id ? 'Restoring…' : 'Restore'}</button>
-                  : <button type="button" className="button secondary" onClick={() => setConfirmId(component._id)} disabled={rowBusyId === component._id}>Archive</button>}
-              </div>
-            </div>
-            {confirmId === component._id && <div className="notice warning mt-4" role="alertdialog" aria-label={'Confirm archiving ' + component.name}>
-              <p className="text-sm">Archive <strong>{component.name}</strong>? It will be removed from the catalog, the planner and recommendations. Saved builds that already include it keep their history, and you can restore it later.</p>
-              <div className="flex flex-wrap gap-3 mt-4">
-                <button type="button" className="button" onClick={() => archive(component)} disabled={rowBusyId === component._id}>{rowBusyId === component._id ? 'Archiving…' : 'Yes, archive it'}</button>
-                <button type="button" className="button secondary" onClick={() => setConfirmId(null)} disabled={rowBusyId === component._id}>Cancel</button>
-              </div>
+        <label className="w-full sm:w-36"><span className="text-xs">State</span>
+          <select value={state} onChange={event => setState(event.target.value as '' | 'active' | 'archived')}>
+            <option value="">All</option><option value="active">Active</option><option value="archived">Archived</option>
+          </select></label>
+      </>}
+      toolbar={<button type="button" className="button light" onClick={() => openForm()}>Add component <span aria-hidden="true">＋</span></button>}/>}
+
+    <Drawer open={formOpen} onClose={() => { setFormOpen(false); setEditing(null); }} wide
+      title={editing ? 'Edit ' + editing.name : 'Add a component'}
+      description={editing ? 'Changing the category clears the specifications the new one does not use.' : 'All fields are required unless marked optional.'}
+      footer={<>
+        <button type="submit" form="component-form" className="button light" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Add component'}</button>
+        <button type="button" className="button secondary" onClick={() => { setFormOpen(false); setEditing(null); }} disabled={busy}>Cancel</button>
+      </>}>
+      {formError && <p role="alert" className="notice error mb-5">{formError}</p>}
+      <form id="component-form" onSubmit={submit} className="grid gap-6">
+        <fieldset disabled={busy} className="min-w-0">
+          <legend className="text-sm font-semibold mb-4">Details</legend>
+          <div className="grid sm:grid-cols-2 gap-5">
+            <Field name="category" label="Category" error={fields.category}>
+              <select id="component-category" name="category" value={form.category} required
+                onChange={event => update('category', event.target.value as Category)}>
+                {CATEGORIES.map(value => <option key={value} value={value}>{LABELS[value]}</option>)}
+              </select>
+            </Field>
+            <Field name="brand" label="Brand" error={fields.brand}>{input('brand', 'text', { maxLength: 120 })}</Field>
+            <div className="sm:col-span-2"><Field name="name" label="Component name" error={fields.name}>{input('name', 'text', { maxLength: 120 })}</Field></div>
+            <Field name="price" label="Price (PHP)" error={fields.price}>{input('price', 'number', { min: 0, step: '0.01' })}</Field>
+            <Field name="performanceScore" label="Performance score (0–100)" error={fields.performanceScore}>{input('performanceScore', 'number', { min: 0, max: 100, step: 'any' })}</Field>
+            <Field name="powerDraw" label="Power draw (watts)" error={fields.powerDraw}>{input('powerDraw', 'number', { min: 0, step: 'any' })}</Field>
+            <Field name="availability" label="Availability" error={fields.availability}>{select('availability', AVAILABILITY)}</Field>
+            <Field name="stock" label="Stock quantity" error={fields.stock}>{input('stock', 'number', { min: 0, step: '1' })}</Field>
+          </div>
+        </fieldset>
+
+        {form.category !== 'gpu' && <fieldset disabled={busy} className="min-w-0">
+          <legend className="text-sm font-semibold mb-4">Compatibility specifications</legend>
+          <div className="grid sm:grid-cols-2 gap-5">
+            {(form.category === 'cpu' || form.category === 'motherboard') && <Field name="socket" label="CPU socket" error={fields.socket}>{select('socket', SOCKETS)}</Field>}
+            {(form.category === 'memory' || form.category === 'motherboard') && <Field name="memoryType" label="Memory type" error={fields.memoryType}>{select('memoryType', MEMORY_TYPES)}</Field>}
+            {form.category === 'motherboard' && <>
+              <Field name="formFactor" label="Motherboard size" error={fields.formFactor}>{select('formFactor', FORM_FACTORS)}</Field>
+              <Field name="memorySlots" label="Memory slots" error={fields.memorySlots}>{input('memorySlots', 'number', { min: 1, step: '1' })}</Field>
+            </>}
+            {(form.category === 'memory' || form.category === 'storage') && <Field name="capacityGb" label="Capacity (GB)" error={fields.capacityGb}>{input('capacityGb', 'number', { min: 1, step: 'any' })}</Field>}
+            {form.category === 'storage' && <Field name="storageType" label="Storage type" error={fields.storageType}>{select('storageType', STORAGE_TYPES)}</Field>}
+            {form.category === 'psu' && <Field name="wattageRating" label="Power supply rating (watts)" error={fields.wattageRating}>{input('wattageRating', 'number', { min: 1, step: 'any' })}</Field>}
+            {form.category === 'case' && <div className="sm:col-span-2">
+              <fieldset aria-describedby={fields.supportedFormFactors ? 'supportedFormFactors-error' : undefined}>
+                <legend className="text-sm font-medium">Supported motherboard sizes</legend>
+                <div className="flex flex-wrap gap-3 mt-3">{FORM_FACTORS.map(size => <label key={size} className="flex items-center gap-3 rounded-lg border border-stroke px-4 py-3 bg-control">
+                  <input className="!w-4 !h-4 !m-0" type="checkbox" value={size} checked={form.supportedFormFactors.includes(size)}
+                    onChange={event => update('supportedFormFactors', event.target.checked ? [...form.supportedFormFactors, size] : form.supportedFormFactors.filter(item => item !== size))}/>
+                  {size}
+                </label>)}</div>
+                {fields.supportedFormFactors && <p id="supportedFormFactors-error" role="alert" className="field-error">{fields.supportedFormFactors}</p>}
+              </fieldset>
             </div>}
-          </li>)}
-        </ul>)}
-    </section>
+          </div>
+        </fieldset>}
+
+        <fieldset disabled={busy} className="min-w-0">
+          <legend className="text-sm font-semibold mb-4">Product image <span className="text-muted font-normal">(optional)</span></legend>
+          <div className="grid gap-5">
+            <Field name="imageUrl" label="Image URL or local path" error={fields.imageUrl} help="An HTTPS image URL, or an existing /images/components/ path.">{input('imageUrl', 'text', { required: false, maxLength: 2000, help: true })}</Field>
+            <Field name="imageSource" label="Image source URL" error={fields.imageSource} help="A link to the manufacturer or original source.">{input('imageSource', 'url', { required: false, maxLength: 2000, help: true })}</Field>
+            <Field name="imageCaption" label="Image caption" error={fields.imageCaption}>{input('imageCaption', 'text', { required: false, maxLength: 200 })}</Field>
+          </div>
+        </fieldset>
+      </form>
+    </Drawer>
+
+    <Drawer open={Boolean(confirm)} onClose={() => setConfirm(null)} title={'Archive ' + (confirm?.name || '')}
+      footer={confirm ? <>
+        <button type="button" className="button" disabled={rowBusy === confirm._id}
+          onClick={() => act(confirm, () => api.delete('/admin/components/' + confirm._id), 'Component archived.')}>
+          {rowBusy === confirm._id ? 'Archiving…' : 'Yes, archive it'}
+        </button>
+        <button type="button" className="button secondary" onClick={() => setConfirm(null)} disabled={rowBusy === confirm._id}>Cancel</button>
+      </> : undefined}>
+      <p className="text-sm">It will be removed from the catalog, the planner and recommendations. Saved builds that already include it keep their history, and you can restore it at any time.</p>
+    </Drawer>
   </section>;
 }

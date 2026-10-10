@@ -23,13 +23,6 @@ router.post('/', async (req, res) => {
   res.status(201).json(serializeBuild(build));
 });
 
-// Published shop builds, shown to customers as ready-made suggestions.
-// Declared before '/:id' so the word is not read as a build ID.
-router.get('/published', async (req, res) => {
-  const builds = await Build.find({ visibility: 'published' }).sort({ updatedAt: -1 }).limit(50).lean();
-  res.json(builds.map(serializeBuild));
-});
-
 router.get('/:id', async (req, res) => {
   res.json(serializeBuild(await getOwnedBuild(req.params.id, req.user._id)));
 });

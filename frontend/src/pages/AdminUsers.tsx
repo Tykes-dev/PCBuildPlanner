@@ -1,43 +1,75 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, errorMessage } from '../api/axios';
+import { useApi } from '../hooks/useApi';
+import { useTableState } from '../hooks/useTableState';
+import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { Feedback } from '../components/Feedback';
 import type { AccountRole } from '../auth/AuthContext';
+
 interface Account { id: string; name: string; email: string; role: AccountRole; createdAt: string; }
+
+const searchText = (row: Account) => [row.name, row.email, row.role].join(' ');
+const sortValues = {
+  name: (row: Account) => row.name.toLowerCase(),
+  email: (row: Account) => row.email.toLowerCase(),
+  role: (row: Account) => row.role,
+  createdAt: (row: Account) => new Date(row.createdAt).getTime()
+};
+
 export function AdminUsers() {
-  const [users, setUsers] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const accounts = useApi<Account[]>('/admin/users');
+  const [role, setRole] = useState<'' | AccountRole>('');
   const [saving, setSaving] = useState('');
-  async function loadUsers() {
-    setError('');
-    try { const response = await api.get<Account[]>('/admin/users'); setUsers(response.data); }
-    catch (failure) { setError(errorMessage(failure)); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void loadUsers(); }, []);
-  async function changeRole(user: Account, role: AccountRole) {
-    setSaving(user.id); setError('');
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  const rows = (accounts.data || []).filter(row => !role || row.role === role);
+  const table = useTableState<Account>({ rows, searchText, sortValues, initialSort: { key: 'createdAt', direction: 'desc' } });
+  const admins = (accounts.data || []).filter(row => row.role === 'admin').length;
+
+  async function changeRole(account: Account, next: AccountRole) {
+    setSaving(account.id); setError(''); setFeedback('');
     try {
-      const response = await api.patch<Account>('/admin/users/' + user.id + '/role', { role });
-      setUsers(current => current.map(item => item.id === user.id ? response.data : item));
+      await api.patch('/admin/users/' + account.id + '/role', { role: next });
+      setFeedback(account.name + ' is now ' + (next === 'admin' ? 'an administrator' : 'a customer') + '. Their existing sessions were signed out.');
+      accounts.retry();
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setSaving(''); }
   }
+
+  const columns: DataTableColumn<Account>[] = [
+    { key: 'name', header: 'Name', sortable: true, render: row => <>
+      <p className="font-medium break-words">{row.name}</p>
+      <p className="text-xs text-muted mt-1 sm:hidden break-words">{row.email}</p>
+    </> },
+    { key: 'email', header: 'Email', sortable: true, hideBelow: 'sm', render: row => <span className="break-words">{row.email}</span> },
+    { key: 'createdAt', header: 'Joined', sortable: true, hideBelow: 'lg', render: row => <span className="text-xs text-muted">{new Date(row.createdAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}</span> },
+    { key: 'role', header: 'Role', sortable: true, align: 'right', render: row => <select
+      aria-label={'Role for ' + row.email} className="!mt-0 !w-auto !py-1.5 min-w-28"
+      disabled={saving === row.id} value={row.role}
+      onChange={event => changeRole(row, event.target.value as AccountRole)}>
+      <option value="customer">Customer</option><option value="admin">Admin</option>
+    </select> }
+  ];
+
   return <section>
     <span className="eyebrow">ADMINISTRATION</span><h1>User access.</h1>
-    <p className="intro">View accounts and assign customer or administrator access. Role changes revoke that account’s existing sessions.</p>
-    {error && <p role="alert" className="notice error mb-5">{error}</p>}
-    {loading ? <p role="status" className="text-muted">Loading accounts…</p> : <div className="panel overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead><tr className="border-b border-stroke text-muted"><th className="py-3 pr-4">Name</th><th className="py-3 pr-4">Email</th><th className="py-3 pr-4">Joined</th><th className="py-3">Role</th></tr></thead>
-        <tbody>{users.map(user => <tr key={user.id} className="border-b last:border-0 border-stroke">
-          <td className="py-4 pr-4 font-medium">{user.name}</td><td className="py-4 pr-4">{user.email}</td>
-          <td className="py-4 pr-4 text-muted">{new Date(user.createdAt).toLocaleDateString()}</td>
-          <td className="py-4"><select aria-label={'Role for ' + user.email} className="mt-0 min-w-32" disabled={saving === user.id} value={user.role} onChange={event => void changeRole(user, event.target.value as AccountRole)}>
-            <option value="customer">Customer</option><option value="admin">Admin</option></select></td>
-        </tr>)}</tbody>
-      </table>
-      {!users.length && <p className="text-muted py-4">No accounts found.</p>}
-      {users.length >= 500 && <p className="text-muted text-xs mt-4">Showing the 500 most recently created accounts.</p>}
-    </div>}
+    <p className="intro">Assign customer or administrator access. Changing a role signs that account out everywhere.{accounts.data ? ` ${accounts.data.length} accounts, ${admins} with administrator access.` : ''}</p>
+
+    {error && <p role="alert" className="notice error mb-4">{error}</p>}
+    {feedback && <p role="status" className="notice note mb-4">{feedback}</p>}
+
+    <Feedback loading={accounts.loading} error={accounts.error} retry={accounts.retry}/>
+    {accounts.data && <>
+      {accounts.data.length >= 500 && <p className="notice note mb-4">Showing the 500 most recently created accounts.</p>}
+      <DataTable
+        table={table} columns={columns} rowKey={row => row.id}
+        label="User accounts" searchPlaceholder="Name or email"
+        empty="No accounts found."
+        filters={<label className="w-full sm:w-40"><span className="text-xs">Role</span>
+          <select value={role} onChange={event => setRole(event.target.value as '' | AccountRole)}>
+            <option value="">All roles</option><option value="customer">Customer</option><option value="admin">Admin</option>
+          </select></label>}/>
+    </>}
   </section>;
 }

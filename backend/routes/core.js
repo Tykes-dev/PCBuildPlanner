@@ -2,6 +2,7 @@ import { requireUser } from '../middleware/auth.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import Component, { CATEGORIES } from '../models/Component.js';
+import Build from '../models/Build.js';
 import AllocationProfile from '../models/AllocationProfile.js';
 import CheckSetting from '../models/CheckSetting.js';
 import BalancePair from '../models/BalancePair.js';
@@ -11,13 +12,14 @@ import { validateBuild } from '../services/compatibility.js';
 import { recommendBuild } from '../services/recommend.js';
 import { evaluateComponentOptions } from '../services/componentOptions.js';
 import { withSampleImage } from '../data/componentImages.js';
+import { serializeBuild } from '../services/builds.js';
 
 const router = Router();
 // The catalog is public. Everything else here reads configuration or runs the
 // planning engine: no writes, nothing owned. Any signed-in account may use it,
 // because administrators plan builds too when answering an inquiry.
 router.use((req, res, next) => {
-  if (req.method === 'GET' && /^\/components(?:\/[^/]+)?\/?$/.test(req.path)) return next();
+  if (req.method === 'GET' && /^\/(?:components(?:\/[^/]+)?|showcase)\/?$/.test(req.path)) return next();
   return requireUser(req, res, next);
 });
 router.use((req, res, next) => {
@@ -82,6 +84,13 @@ function customSplit(allocations) {
   }
   return allocations.map(row => ({ category: row.category, percent: row.percent, priority: row.priority }));
 }
+
+// Builds the shop has published as ready-made suggestions. Public, because
+// the landing page shows them to visitors who have not signed in yet.
+router.get('/showcase', async (req, res) => {
+  const builds = await Build.find({ visibility: 'published' }).sort({ updatedAt: -1 }).limit(12).lean();
+  res.json(builds.map(serializeBuild));
+});
 
 router.post('/allocations', async (req, res) => {
   const custom = customSplit(req.body.allocations);

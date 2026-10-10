@@ -129,7 +129,7 @@ export function AdminRules() {
     finally { setRowBusy(null); }
   }
 
-  return <section className="max-w-4xl mx-auto">
+  return <section>
     <div className="mb-6">
       <span className="eyebrow">ADMINISTRATION</span><h1>Compatibility rules.</h1>
       <p className="intro !mb-0">Reword the checks customers see, set the power safety margin, and decide which parts are compared for balance.</p>

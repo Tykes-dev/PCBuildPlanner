@@ -174,12 +174,80 @@
     .process-grid { grid-template-columns: 1fr; }
     .section-heading h2 { font-size: 27px; }
     .how-section { margin-top: 32px; }
-    .header-controls nav { display: grid; grid-template-columns: repeat(4, auto); gap: 0; min-width: 0; }
-    .nav-link { padding: 9px 6px; font-size: 11px; white-space: nowrap; text-align: center; }
-    .header-controls { gap: 4px; }
+    .header-controls { gap: 8px; }
     .theme-toggle { width: 36px; height: 36px; }
   }
 }
+/* ---- Administration shell ------------------------------------------- */
+/* A full-height console frame: the sidebar is the page edge, not a card
+   floating inside the content column. */
+.admin-frame { display: flex; min-height: 100dvh; align-items: stretch; }
+.admin-sidebar { flex: 0 0 15.5rem; width: 15.5rem; position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--color-surface); border-right: 1px solid var(--color-stroke); }
+.side-brand { padding: 14px 16px; border-bottom: 1px solid var(--color-stroke); }
+.side-brand .brand { font-size: 15px; }
+.side-sections { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 10px; display: flex; flex-direction: column; gap: 20px; }
+.side-group-title { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; margin: 0; font-size: 10.5px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-muted); }
+.side-group-title svg { width: 14px; height: 14px; flex: none; }
+.side-nav { display: flex; flex-direction: column; gap: 1px; }
+.side-nav .nav-link { display: block; text-align: left; font-size: 13.5px; padding: 8px 12px; border-radius: 6px; border-left: 3px solid transparent; }
+.side-nav .nav-link.active { background: var(--color-control); color: var(--color-ink); font-weight: 600; border-left-color: var(--color-signal); }
+.side-nav .nav-link.active::after { display: none; }
+.side-foot { flex: none; border-top: 1px solid var(--color-stroke); padding: 12px 14px; }
+.admin-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.admin-topbar { border-bottom: 1px solid var(--color-stroke); background: var(--color-surface); position: sticky; top: 0; z-index: 30; }
+.admin-content { width: 100%; padding: 22px 18px; }
+@media (min-width: 1024px) { .admin-content { padding: 28px 32px; } }
+/* A console is read at a glance, not like an article, so administration pages
+   run denser than the customer pages and fill the width the sidebar leaves. */
+.admin-main h1 { font-size: 28px; line-height: 1.15; letter-spacing: -0.01em; }
+.admin-main h2 { font-size: 17px; }
+.admin-main h3 { font-size: 15px; }
+.admin-main .intro { font-size: 14px; margin-bottom: 20px; }
+.admin-main .panel { padding: 18px; }
+@media (min-width: 1024px) { .admin-main h1 { font-size: 31px; } .admin-main .panel { padding: 20px; } }
+
+@media (max-width: 1023px) {
+  .admin-sidebar { display: none; }
+  .admin-frame { display: block; }
+}
+
+.nav-toggle { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none; border: 1px solid var(--color-stroke); border-radius: 8px; background: var(--color-surface); color: var(--color-ink); font-size: 17px; line-height: 1; }
+.nav-toggle:hover { background: var(--color-control); }
+
+/* ---- Tabs ------------------------------------------------------------ */
+.tab-row { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-stroke); margin: 0 0 20px; }
+.tab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 14px; color: var(--color-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--color-ink); }
+.tab.active { color: var(--color-ink); font-weight: 600; border-bottom-color: var(--color-signal); }
+.tab-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: var(--color-control); border: 1px solid var(--color-stroke); font-size: 11px; font-weight: 600; }
+.tab.active .tab-count { background: var(--color-signal-fill); color: #1b1b1f; border-color: transparent; }
+
+/* ---- Panels ---------------------------------------------------------- */
+/* Navigation slides in from the edge, the way a menu should. Detail and form
+   panels are centred dialogs, which read better than an edge panel on a wide
+   screen, and become a bottom sheet once the screen is narrow. */
+.nav-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(15, 15, 18, 0.55); display: flex; justify-content: flex-end; }
+.nav-drawer { width: min(20rem, 88vw); height: 100%; overflow-y: auto; display: flex; flex-direction: column; background: var(--color-surface); border-left: 1px solid var(--color-stroke); padding: 20px; }
+.nav-drawer .side-sections { flex: 1 1 auto; }
+
+.drawer-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(15, 15, 18, 0.6); display: flex; align-items: center; justify-content: center; padding: 24px 20px; }
+.drawer-panel { width: min(36rem, 100%); max-height: min(86dvh, 54rem); display: flex; flex-direction: column; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-stroke); border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32); }
+.drawer-panel.drawer-wide { width: min(58rem, 100%); }
+.drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--color-stroke); }
+.drawer-body { flex: 1 1 auto; overflow-y: auto; padding: 20px; min-height: 0; }
+.drawer-foot { flex: none; padding: 14px 20px; border-top: 1px solid var(--color-stroke); display: flex; flex-wrap: wrap; gap: 12px; }
+
+@media (max-width: 639px) {
+  .drawer-overlay { padding: 0; align-items: flex-end; }
+  .drawer-panel, .drawer-panel.drawer-wide { width: 100%; max-height: 92dvh; border-radius: 14px 14px 0 0; border-left: 0; border-right: 0; border-bottom: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nav-drawer { animation: panel-slide 180ms ease-out; }
+  .drawer-panel { animation: panel-rise 160ms ease-out; }
+  @keyframes panel-slide { from { transform: translateX(14px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+  @keyframes panel-rise { from { transform: translateY(10px) scale(0.985); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+
 :root[data-theme="dark"] .notice.error { color: #ffb5aa; background: #321e1c; border-color: #71453d; }
 :root[data-theme="dark"] .notice.warning,
 :root[data-theme="dark"] .tag.warning { color: #f5d298; background: #30291b; border-color: #665237; }
@@ -187,10 +255,6 @@
 :root[data-theme="dark"] .tag.pass { color: var(--color-ink); background: var(--color-control); border-color: var(--color-stroke); }
 @media (prefers-reduced-motion: no-preference) {
   body, .site-header, .panel, input, select, .theme-toggle { transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease; }
-}
-@media (max-width: 639px) {
-  .header-controls { width: 100%; gap: 12px; }
-  .header-controls nav { flex: 1 1 100%; width: 100%; gap: 4px; }
 }
 .print-only { display: none; }
 @media print {
@@ -203,5 +267,3 @@
   :root[data-theme] .notice { color: #000; background: #fff; border-color: #ccc; }
   h1 { font-size: 24px; }
 }
-
-
