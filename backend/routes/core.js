@@ -1,3 +1,4 @@
+import { requireCustomer } from '../middleware/auth.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import Component, { CATEGORIES } from '../models/Component.js';
@@ -12,6 +13,14 @@ import { evaluateComponentOptions } from '../services/componentOptions.js';
 import { withSampleImage } from '../data/componentImages.js';
 
 const router = Router();
+router.use((req, res, next) => {
+  if (req.method === 'GET' && /^\/components(?:\/[^/]+)?\/?$/.test(req.path)) return next();
+  return requireCustomer(req, res, next);
+});
+router.use((req, res, next) => {
+  if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database unavailable. Configure MongoDB Atlas and run the seed command.' });
+  next();
+});
 const loadProfile = async slug => {
   if (typeof slug !== 'string') throw badRequest('Choose a profile.');
   const profile = await AllocationProfile.findOne({ slug, active: true }).lean();
@@ -77,3 +86,4 @@ router.post('/component-options', async (req, res) => {
   res.json(evaluateComponentOptions(components, items, config.settings));
 });
 export default router;
+

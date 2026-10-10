@@ -1,40 +1,32 @@
 import mongoose from 'mongoose';
+import Session from '../models/Session.js';
 import User from '../models/User.js';
-import { requestSessionToken, verifySessionToken } from '../services/auth.js';
-import { forbidden, unauthorized } from '../services/errors.js';
-
-async function findActiveUser(userId) {
-  if (!mongoose.isObjectIdOrHexString(userId)) return null;
-  return User.findOne({ _id: userId, active: true });
+import { tokenHash } from '../services/auth.js';
+export const COOKIE = 'pcbp_session';
+export const cookieOptions = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api' });
+export function sessionToken(req) {
+  const token = (req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
+  return token && /^[a-f0-9]{64}$/.test(token) ? token : null;
 }
-
-export function createRequireAuth({ verifyToken = verifySessionToken, loadUser = findActiveUser } = {}) {
-  return async function authenticate(req, res, next) {
-    const token = requestSessionToken(req);
-    if (!token) return next(unauthorized());
-
-    let payload;
-    try {
-      payload = verifyToken(token);
-    } catch {
-      return next(unauthorized('Your session is invalid or has expired.'));
-    }
-
-    try {
-      const user = await loadUser(payload.sub);
-      if (!user) return next(unauthorized('Your session is invalid or has expired.'));
-      req.user = user;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-export const requireAuth = createRequireAuth();
-
-export function requireAdmin(req, res, next) {
-  if (!req.user) return next(unauthorized());
-  if (req.user.role !== 'admin') return next(forbidden());
+export function databaseReady(req, res, next) {
+  if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database unavailable. Configure MongoDB Atlas and run the seed command.' });
   next();
 }
+export async function requireUser(req, res, next) {
+  const token = sessionToken(req);
+  if (!token) return res.status(401).json({ message: 'Log in to continue.' });
+  if (mongoose.connection.readyState !== 1) return databaseReady(req, res, next);
+  const session = await Session.findOne({ tokenHash: tokenHash(token), expiresAt: { $gt: new Date() } }).lean();
+  const user = session && await User.findById(session.user).lean();
+  if (!user) return res.status(401).json({ message: 'Your session has expired. Please log in again.' });
+  req.user = user;
+  next();
+}
+export function requireRole(role) {
+  return (req, res, next) => requireUser(req, res, error => {
+    if (error) return next(error);
+    if (req.user.role !== role) return res.status(403).json({ message: 'You do not have access to this page.' });
+    next();
+  });
+}
+export const requireCustomer = requireRole('customer');

@@ -1,25 +1,56 @@
 # Changelog
 
-## 2026-10-08 — Live Atlas and administrator setup
+## 2026-10-09 — Documentation and GitHub branch preparation
 
-- Moved the user's local environment file to ignored `backend/.env` and validated MONGO_URI, CLIENT_ORIGIN, JWT_SECRET, and JWT_TTL_HOURS without logging their values.
-- Refreshed the Atlas Drivers connection string, targeted the `pcbuildplanner` database explicitly, and confirmed a live database connection.
-- Created the first application administrator with the masked interactive setup command; a read-only database check confirmed exactly one active admin without displaying account details.
-- Live verification passed: `GET /api/health` reported connected, `GET /api/components` returned all 34 seeded records, and the Vite frontend returned HTTP 200.
-- Recorded the Windows execution-policy workaround: use `npm.cmd run create-admin` and `npm.cmd run dev` when PowerShell blocks `npm.ps1`; no machine-wide policy change is required.
-- The Atlas password and JWT secret appeared in setup screenshots. They are not written to source or documentation, but must be rotated before deployment, repository sharing, expanded Atlas network access, or other non-local use.
+- Refreshed CONTEXT.md with the completed account, saved-build, request, and reporting scope, current validation results, and remaining authenticated live-flow/submission QA.
+- Recorded https://github.com/Tykes-dev/PCBuildPlanner as the requested origin and initialized Git in the existing local download.
+- Prepared feature/saved-builds-and-reports locally. No existing remote history has been fetched or changed; selecting the remote base and publishing require GitHub authentication.
+- Existing local configuration remains ignored, including backend/env, environment files, dependencies, and generated frontend output.
+- This handover changes documentation and Git setup only; earlier 30-test, production-build, isolated browser, and live read-only verification results remain applicable.
 
-## 2026-10-08 — Authentication and role-based access
+## 2026-10-09 — Saved builds, build requests, and admin reports
 
-- Added the User model with normalized unique emails, hidden bcrypt password hashes, customer/admin roles, active status, and last-login timestamps.
-- Added register, login, logout, and current-user endpoints using JWTs in HttpOnly SameSite=Lax cookies, with Bearer-token fallback for non-browser clients. Tokens contain only a user ID; protected requests reload the active user and current role.
-- Added requireAuth/requireAdmin middleware, credentialed CORS, shared database-readiness handling, safe 401/403 errors, admin user listing, and guarded role updates.
-- Public registration rejects role input and always creates a customer. Admin role management blocks self-demotion and demotion of the final active administrator.
-- Added a masked interactive `npm run create-admin` workflow. The admin password is not stored in source, documentation, a command argument, or a public frontend variable.
-- Added login, registration, account, and admin user-management pages; auth-aware navigation; credentialed axios; protected/admin route guards; shared role contracts; and responsive styling. Existing planning pages remain public.
-- Added backend-only JWT_SECRET/JWT_TTL_HOURS configuration and startup validation. Private values belong in ignored backend/.env; Atlas credentials remain separate from application logins.
-- Added bcryptjs and jsonwebtoken. The dependency audit reported zero vulnerabilities.
-- Validation: all 26 backend tests passed and the strict TypeScript/Vite production build completed. Subsequent live Atlas and first-admin verification is recorded in the entry above.
+- Added customer Saved builds and Build details pages, planner save/update/save-as-new controls, rename, duplicate, and reopen actions.
+- Added Build with owner/profile/component references, embedded server-derived part snapshots and saved prices/totals. All build operations filter by customer ownership; foreign IDs return 404 and clients cannot supply owners or snapshot prices.
+- Saved details/duplicates retain historical values. Reopening refreshes live prices/specifications, removes unavailable parts with notices, preserves editable low-stock quantities, and falls back to an active profile when needed. Empty/incomplete/incompatible/over-budget drafts remain saveable.
+- Added customer request submission/history and BuildRequest with an independent immutable current-catalog submission snapshot. Submission checks completeness, supported compatibility, availability, and tracked quantities; manual over-budget submissions remain allowed.
+- Added admin reports/review at /admin/reports, now the default admin destination. Admins can approve/reject pending requests and complete approved requests with remarks. One active pending/approved request per owner/build is enforced by a unique partial index; stale or closed status transitions return 409.
+- Reports show all-time saved-build/request totals, active counts, status breakdown, and top 10 components across saved selections, including duplicate drafts and quantity-aware unit counts. Request lists show the most recent 200 and label that limit.
+- Requests do not reserve or deduct stock. Editing a saved build leaves existing submitted snapshots intact.
+- Current scope: 10 frontend pages, 30 API endpoints, eight related models. Saved builds, ownership, requests, snapshots, and reports are no longer pending team modules.
+- Verification: all 30 backend tests and the final TypeScript/Vite build passed. Headless Edge with mock APIs verified save/rename/duplicate/reopen/update/save-as-new, submission snapshots and feedback, role guards, admin transitions/counts/history, refresh-failure recovery, empty states, and desktop/375px layouts. Live read-only checks confirmed Atlas connection, 34 catalog records, zero initial builds/requests, the active-request unique index, and guest 401 responses. No live test records were created.
+- Customer history exposes submitted parts. Submission copy explains current catalog prices/specifications. Successful admin writes update cards immediately; refresh failures explain stale totals. Responsive title/actions and expanded account navigation were verified on phones. New pages are lazy-loaded.
+
+## 2026-10-09 — Admin component creation and one account page
+
+- Added admin Add component navigation/page and POST /api/admin/components, with category-specific specs, optional photo metadata, strict input validation, clear duplicate/field errors, and server-side admin enforcement.
+- New records enter the existing active catalog and customer planner queries. Backend startup initializes the Component unique index before listening.
+- Combined Login and Register into /auth with in-page modes, one landing/header link, and redirects for old URLs. Registration switches to login with retained email and confirmation.
+- Preserved requested planner/recommendation destination after customer login and admin role routing. Corrected the password help/label association.
+- Verified 23 backend tests and final TypeScript/production build; headless browser checks covered shared auth, planner return, role guards, all category form fields, creation feedback and 375px layouts using mock API data.
+- Restarted the live API, confirmed Atlas connected and 34 catalog records, verified guest creation denial, and opened the planner link. No test accounts/components or credentials were added to Atlas.
+- Updated context/README and saved account/admin-form QA screenshots. The root run-app.bat launcher is documented.
+
+
+## 2026-10-09 — Guest landing and admin role access
+
+- Restored public Home at / for guests, with Components as a separate public tab; planner and recommendation routes require customer login.
+- Shared login/session restoration now accepts admins as well as customers. Admins land on /admin/users.
+- Added admin-only endpoints to list accounts and assign customer/admin roles. Role changes revoke sessions and the last administrator cannot be demoted.
+- Added a first-admin bootstrap script (npm run create-admin -w backend) reading temporary ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD from ignored backend/env. It will not promote an existing account.
+- Added admin account management UI and excluded backend/env from version control.
+- Frontend production build and backend syntax checks passed. No tests or live database role changes were run.
+## 2026-10-09 — Customer registration and guest access restrictions
+
+- Added User and Session models, customer-only registration, login, session lookup, and logout endpoints. Public registration cannot select an admin role.
+- Added salted scrypt password hashing, normalized unique email addresses, opaque HttpOnly session cookies, hashed server-side session tokens, explicit expiry checks, session revocation, origin protection, and per-process auth attempt limits.
+- Added registration/login pages with validation, password confirmation, feedback, and a registration-to-login flow.
+- Guests can browse Home, Components, and auth pages. Planner/recommendation APIs independently enforce customer sessions.
+- Added account-aware navigation, logout, startup/focus session checks, and draft isolation between accounts while preserving navigation drafts.
+- Startup waits for User/Session indexes. Default local API hostname follows the frontend so cookie sessions work consistently with localhost or 127.0.0.1.
+- Verified all 18 backend tests and the TypeScript/production build. Auth tests mock database persistence; live Atlas registration is not verified. Browser verification was blocked by a Windows sandbox helper initialization error.
+- No new dependencies, admin accounts, remote commits, or credential changes.
+
 
 ## 2026-10-07 — Interface visual refinement
 
@@ -93,3 +124,16 @@ Validation results are recorded in README once checks complete. This entry does 
 - Preserved selectable over-target parts and warning-only builds. Options sort by compatibility, target fit, and price.
 - Validation: all 16 tests and the production build passed; the running API returned 20 image-mapped records. Live browser verified socket/memory exclusions and no horizontal overflow at a 375px viewport. All 20 public image endpoints were checked for successful image responses after replacing two unavailable links.
 - External photos require internet; variant captions distinguish model-family examples. No dependencies changed, no Git commit/push, and no credential files edited.
+
+
+
+
+
+
+
+## 2026-10-10 — Publication preparation
+
+- Based the saved-builds-and-reports branch on existing GitHub main while preserving local work.
+- Added current teammate setup instructions and clarified the two supported local environment filenames.
+- Re-ran all 30 backend tests and the production build successfully. Atlas read-only connectivity timed out; no database records were changed.
+

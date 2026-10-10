@@ -1,5 +1,23 @@
 # Setup and team handover
 
+## October 10, 2026 handover
+
+The repository already exists at https://github.com/Tykes-dev/PCBuildPlanner. The current work is on `feature/saved-builds-and-reports`, based on `main`. Teammates should fetch and check out that branch until it is merged; do not initialize another repository using the historical instructions below.
+
+For teammates running the app locally:
+
+1. Run `npm install` from the repository root.
+2. Obtain a database user with read/write access to the existing shared database, and have your public IP added to Atlas Network Access. Use the same cluster and database name to share the existing catalog and records.
+3. Copy `backend/.env.example` to `backend/.env` and privately set `MONGO_URI`, then run `npm run dev`. For the Windows launcher or `create-admin` script, use the ignored filename `backend/env` instead; the launcher is `run-app.bat`.
+4. Verify `http://localhost:3001/api/health` returns `database: connected`. Register a customer in the app; an existing app administrator can grant the admin role if needed. Atlas database users and app accounts are separate.
+5. The shared catalog was seeded previously. Do not recreate the database or collections. The server initializes saved-build/request indexes on startup; records are created as the features are used. Seed only a new or missing sample catalog using `npm run seed` with `backend/.env` configured.
+
+People using a hosted website need an app account, not Atlas credentials. The hosted backend must have its connection string configured and network access permitted. Pushing source to GitHub alone does not host the app.
+
+October 10 validation: 30 backend tests and the frontend production build passed. A read-only Atlas connection attempt timed out with `MongooseServerSelectionError`; current cluster/network availability was not verified, and no database records were changed. Check cluster status, the backend machine's current IP access entry, and connectivity if this persists.
+
+The remaining sections are historical initial-setup notes. Authentication, saved builds, requests, reports, and admin component creation are now implemented; see README and CONTEXT for current scope.
+
 ## GitHub — user performs these steps
 
 1. Sign in to your own GitHub account and create an empty repository named PCBuildPlanner.
@@ -22,32 +40,14 @@
 4. Add your current public IP to the project network access list. Each teammate running the backend needs their IP permitted and their own database credentials.
 5. Open Connect > Drivers and select Node.js. Copy the connection string privately.
 6. Copy backend/.env.example to backend/.env. Replace the placeholders in MONGO_URI and use pcbuildplanner as the database name. URL-encode special characters in the password if needed.
-7. Generate a private JWT signing secret from the repository root:
-
-   ```powershell
-   node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
-   ```
-
-   Paste the output after `JWT_SECRET=` in backend/.env. Keep `JWT_TTL_HOURS=8` unless a different session lifetime is required. Never put either the Atlas credential or JWT secret in frontend/.env or a `VITE_` variable.
-8. From the repository root run `npm run seed`. MongoDB creates the database and its collections when records are written; manual collection creation is unnecessary.
-9. Run `npm run create-admin`. Enter the first administrator's name, email, and masked password when prompted. The password is not accepted as a command-line argument and should not be saved in source or documentation. The command refuses to replace or promote an existing account.
-10. Run `npm run dev`. Open http://localhost:5173 and check http://localhost:3001/api/health for a connected database. Register another account through the website to verify the default customer role, then sign in as the administrator and open Account > Manage users.
+7. From the repository root run `npm run seed`. MongoDB creates the database and its collections when records are written; manual collection creation is unnecessary.
+8. Run `npm run dev`. Open http://localhost:5173 and check http://localhost:3001/api/health for a connected database.
 
 Only the user should execute account setup and Git commit/push steps. The assistant prepares local source and validates it.
 
-## Authentication and roles
-
-- Application accounts are stored in the `users` collection. They are separate from the MongoDB Atlas database credential in MONGO_URI.
-- Public registration always creates a `customer`. It rejects a supplied role instead of trusting it.
-- Passwords are bcrypt-hashed and never returned by the API. Browser JWT sessions use an HttpOnly, SameSite=Lax cookie; no token is stored in frontend local storage.
-- `GET /api/auth/me` requires a valid, active user. Admin endpoints enforce `requireAuth` and `requireAdmin` on the server; frontend guards are only a user-interface layer.
-- An administrator can assign customer/admin roles at `/admin/users`. Self-demotion and demotion of the final active administrator are blocked.
-- To rotate the JWT signing key, replace JWT_SECRET and restart the backend. Existing sessions will become invalid and users must sign in again.
-- frontend/.env remains optional. If present, it should contain only a public API location such as `VITE_API_URL=http://localhost:3001/api`.
-
 ## Next members
 
-- Accounts follow-up: add password change/recovery, deliberate account deactivation/reactivation, audit history, and production cookie/deployment review if those enter scope. Preserve server-side authorization.
+- Accounts: add User model, bcrypt hashing, JWT verification, requireAuth/requireAdmin, login/register UI, and route guards. Frontend guards are not a substitute for backend authorization.
 - Builds/requests: add Build, BuildItem, BuildRequest models and ownership checks; wire planner save/import to persistent IDs and price snapshots.
 - Catalog/config: add protected CRUD and React Hook Form/Zod forms, server validation, confirmations, success feedback, default-profile handling, and pair canonicalization on updates.
 - Reports: aggregate real builds/requests; do not use hardcoded chart counts.

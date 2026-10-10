@@ -1,0 +1,38 @@
+import type { Item, Plan } from './index';
+
+export interface SavedBuild {
+  id: string;
+  name: string;
+  budget: number;
+  profileSlug: string;
+  items: Item[];
+  total: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+export interface BuildRequest {
+  id: string;
+  buildId: string;
+  status: RequestStatus;
+  note: string;
+  remarks: string;
+  createdAt: string;
+  updatedAt: string;
+  snapshot: Pick<SavedBuild, 'name' | 'budget' | 'profileSlug' | 'items' | 'total'>;
+}
+
+export interface ReopenedBuild { plan: Plan; notices: string[]; }
+export const REQUEST_LABELS: Record<RequestStatus, string> = {
+  pending: 'Pending', approved: 'Approved', rejected: 'Rejected', completed: 'Completed',
+};
+export const REQUEST_TONES: Record<RequestStatus, string> = {
+  pending: 'warning', approved: 'pass', rejected: 'text-danger', completed: 'pass',
+};
+export function profileLabel(slug: string) {
+  return slug.split(/[-_]/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+export function buildDate(date: string) {
+  return new Date(date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+}

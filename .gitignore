@@ -10,3 +10,5 @@ coverage/
 *.key
 .DS_Store
 Thumbs.db
+
+backend/env
