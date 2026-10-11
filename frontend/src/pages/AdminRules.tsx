@@ -1,33 +1,39 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { isAxiosError } from 'axios';
 import { api, errorMessage } from '../api/axios';
 import { useApi } from '../hooks/useApi';
 import { Feedback } from '../components/Feedback';
+import { IconButton } from '../components/Icon';
+import {
+  MARGIN_CODE, checkSchema, pairSchema, toCheckPayload, toPairPayload,
+  type CheckFormValues, type PairFormValues
+} from '../schemas/rules';
 import { CATEGORIES, LABELS, type BalancePair, type Category, type CheckSetting } from '../types';
 
 interface Rules { checks: CheckSetting[]; pairs: BalancePair[]; }
-type CheckDraft = { label: string; message: string; marginPercent: string };
+type CheckDraft = Omit<CheckFormValues, 'code'>;
 type CheckErrors = Partial<Record<'label' | 'message' | 'marginPercent', string>>;
-type PairErrors = Partial<Record<'categoryA' | 'categoryB' | 'maxGap', string>>;
-
-const MARGIN_CODE = 'PSU_WATTAGE_HEADROOM';
 
 export function AdminRules() {
   const rules = useApi<Rules>('/admin/rules');
   const [drafts, setDrafts] = useState<Record<string, CheckDraft>>({});
   const [checkErrors, setCheckErrors] = useState<Record<string, CheckErrors>>({});
   const [checkBusy, setCheckBusy] = useState<string | null>(null);
-  const [pairA, setPairA] = useState<Category>('cpu');
-  const [pairB, setPairB] = useState<Category>('gpu');
-  const [pairGap, setPairGap] = useState('25');
-  const [pairErrors, setPairErrors] = useState<PairErrors>({});
   const [editingPair, setEditingPair] = useState<string | null>(null);
-  const [pairBusy, setPairBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const submitting = useRef(false);
+  const { register: pairField, handleSubmit: handlePair, reset: resetPair, watch: watchPair,
+    setError: setPairError, formState: { errors: pairErrors, isSubmitting: pairBusy } } =
+    useForm<PairFormValues>({
+      resolver: zodResolver(pairSchema),
+      defaultValues: { categoryA: 'cpu', categoryB: 'gpu', maxGap: '25' }
+    });
+  const pairA = watchPair('categoryA') as Category;
+  const pairB = watchPair('categoryB') as Category;
 
   // The saved values seed the editable drafts once, after the first load.
   useEffect(() => {
@@ -48,63 +54,58 @@ export function AdminRules() {
     const draft = drafts[check.code];
     if (!draft) return;
     setError(''); setFeedback('');
-    const errors: CheckErrors = {};
-    if (!draft.label.trim() || draft.label.trim().length > 80) errors.label = 'Enter a short name up to 80 characters.';
-    if (!draft.message.trim() || draft.message.trim().length > 300) errors.message = 'Enter the customer message, up to 300 characters.';
-    if (check.code === MARGIN_CODE) {
-      const margin = Number(draft.marginPercent);
-      if (!draft.marginPercent.trim() || !Number.isFinite(margin) || margin < 0 || margin > 100) errors.marginPercent = 'Enter a margin from 0 to 100 percent.';
+    const parsed = checkSchema.safeParse({ ...draft, code: check.code });
+    if (!parsed.success) {
+      const errors: CheckErrors = {};
+      for (const issue of parsed.error.issues) {
+        const key = String(issue.path[0]) as keyof CheckErrors;
+        if (!errors[key]) errors[key] = issue.message;
+      }
+      setCheckErrors(current => ({ ...current, [check.code]: errors }));
+      setError('Check the highlighted fields.');
+      return;
     }
-    setCheckErrors(current => ({ ...current, [check.code]: errors }));
-    if (Object.keys(errors).length) { setError('Check the highlighted fields.'); return; }
+    setCheckErrors(current => ({ ...current, [check.code]: {} }));
 
     setCheckBusy(check.code);
     try {
-      await api.put('/admin/rules/checks/' + check.code, {
-        label: draft.label.trim(), message: draft.message.trim(),
-        ...(check.code === MARGIN_CODE ? { marginPercent: Number(draft.marginPercent) } : {})
-      });
-      setFeedback(draft.label.trim() + ' was updated. Customers see the new wording straight away.');
+      await api.put('/admin/rules/checks/' + check.code, toCheckPayload(parsed.data));
+      setFeedback(parsed.data.label + ' was updated. Customers see the new wording straight away.');
       rules.retry();
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setCheckBusy(null); }
   }
 
   function resetPairForm() {
-    setEditingPair(null); setPairA('cpu'); setPairB('gpu'); setPairGap('25'); setPairErrors({});
+    setEditingPair(null);
+    resetPair({ categoryA: 'cpu', categoryB: 'gpu', maxGap: '25' });
   }
 
   function startPairEdit(pair: BalancePair) {
     setEditingPair(pair._id);
-    setPairA(pair.categoryA); setPairB(pair.categoryB); setPairGap(String(pair.maxGap));
-    setPairErrors({}); setError(''); setFeedback('');
+    resetPair({ categoryA: pair.categoryA, categoryB: pair.categoryB, maxGap: String(pair.maxGap) });
+    setError(''); setFeedback('');
   }
 
-  async function submitPair(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting.current) return;
+  async function submitPair(values: PairFormValues) {
     setError(''); setFeedback('');
-    const errors: PairErrors = {};
-    if (pairA === pairB) errors.categoryB = 'Compare two different categories.';
-    const gap = Number(pairGap);
-    if (!pairGap.trim() || !Number.isFinite(gap) || gap < 0 || gap > 100) errors.maxGap = 'Enter a score gap from 0 to 100.';
-    setPairErrors(errors);
-    if (Object.keys(errors).length) return;
-
-    submitting.current = true; setPairBusy(true);
     try {
-      const payload = { categoryA: pairA, categoryB: pairB, maxGap: gap };
+      const payload = toPairPayload(values);
       if (editingPair) await api.put('/admin/rules/pairs/' + editingPair, payload);
       else await api.post('/admin/rules/pairs', payload);
-      setFeedback(`${LABELS[pairA]} and ${LABELS[pairB]} are now compared with a maximum gap of ${gap}.`);
+      setFeedback(`${LABELS[values.categoryA as Category]} and ${LABELS[values.categoryB as Category]} are now compared with a maximum gap of ${payload.maxGap}.`);
       resetPairForm();
       rules.retry();
     } catch (failure) {
       setError(errorMessage(failure));
       if (isAxiosError(failure) && failure.response?.data?.fields) {
-        setPairErrors(failure.response.data.fields as PairErrors);
+        for (const [key, message] of Object.entries(failure.response.data.fields as Record<string, unknown>)) {
+          if (['categoryA', 'categoryB', 'maxGap'].includes(key) && typeof message === 'string') {
+            setPairError(key as keyof PairFormValues, { message });
+          }
+        }
       }
-    } finally { submitting.current = false; setPairBusy(false); }
+    }
   }
 
   async function togglePair(pair: BalancePair) {
@@ -186,7 +187,7 @@ export function AdminRules() {
         <h2>Balance checks</h2>
         <p className="text-sm text-muted mt-2 mb-5">A balance check compares two parts' performance scores and warns the customer when one is far stronger than the other. These are warnings, so a build can still be saved and submitted.</p>
 
-        <form className="panel" onSubmit={submitPair}>
+        <form className="panel" noValidate onSubmit={handlePair(submitPair)}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-base">{editingPair ? 'Edit balance check' : 'Add a balance check'}</h3>
             {editingPair && <button type="button" className="button secondary" onClick={resetPairForm} disabled={pairBusy}>Cancel edit</button>}
@@ -194,23 +195,22 @@ export function AdminRules() {
           <div className="grid sm:grid-cols-3 gap-5 mt-5">
             <div>
               <label htmlFor="pair-a">Compare</label>
-              <select id="pair-a" value={pairA} disabled={pairBusy} onChange={event => { setPairA(event.target.value as Category); setPairErrors({}); }}>
+              <select id="pair-a" {...pairField('categoryA')} disabled={pairBusy}>
                 {CATEGORIES.map(category => <option key={category} value={category}>{LABELS[category]}</option>)}
               </select>
             </div>
             <div>
               <label htmlFor="pair-b">With</label>
-              <select id="pair-b" value={pairB} disabled={pairBusy} onChange={event => { setPairB(event.target.value as Category); setPairErrors({}); }} aria-invalid={Boolean(pairErrors.categoryB)}>
+              <select id="pair-b" {...pairField('categoryB')} disabled={pairBusy} aria-invalid={Boolean(pairErrors.categoryB)}>
                 {CATEGORIES.map(category => <option key={category} value={category}>{LABELS[category]}</option>)}
               </select>
-              {pairErrors.categoryB && <p role="alert" className="field-error">{pairErrors.categoryB}</p>}
+              {pairErrors.categoryB && <p role="alert" className="field-error">{pairErrors.categoryB.message}</p>}
             </div>
             <div>
               <label htmlFor="pair-gap">Warn above a gap of</label>
-              <input id="pair-gap" type="number" min="0" max="100" step="any" value={pairGap} disabled={pairBusy}
-                onChange={event => { setPairGap(event.target.value); setPairErrors(current => ({ ...current, maxGap: undefined })); }}
+              <input id="pair-gap" type="number" min="0" max="100" step="any" {...pairField('maxGap')} disabled={pairBusy}
                 aria-invalid={Boolean(pairErrors.maxGap)} aria-describedby="gap-help"/>
-              {pairErrors.maxGap && <p role="alert" className="field-error">{pairErrors.maxGap}</p>}
+              {pairErrors.maxGap && <p role="alert" className="field-error">{pairErrors.maxGap.message}</p>}
             </div>
           </div>
           <p id="gap-help" className="text-xs text-muted mt-3">Scores run from 0 to 100. A smaller gap means the warning appears more often.</p>
@@ -229,10 +229,13 @@ export function AdminRules() {
                   </div>
                   <p className="text-sm text-muted mt-2">Warns when the two scores differ by more than {pair.maxGap}.</p>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                  <button type="button" className="button secondary" onClick={() => startPairEdit(pair)} disabled={pairBusy || rowBusy === pair._id}>Edit</button>
-                  <button type="button" className="button secondary" onClick={() => togglePair(pair)} disabled={rowBusy === pair._id}>{pair.active ? 'Turn off' : 'Turn on'}</button>
-                  <button type="button" className="button secondary" onClick={() => setConfirmId(pair._id)} disabled={rowBusy === pair._id}>Remove</button>
+                <div className="row-actions">
+                  <IconButton icon="edit" label="Edit this balance check"
+                    onClick={() => startPairEdit(pair)} disabled={pairBusy || rowBusy === pair._id}/>
+                  <IconButton icon="power" label={pair.active ? 'Turn this balance check off' : 'Turn this balance check on'}
+                    onClick={() => togglePair(pair)} busy={rowBusy === pair._id}/>
+                  <IconButton icon="remove" tone="danger" label="Remove this balance check"
+                    onClick={() => setConfirmId(pair._id)} disabled={rowBusy === pair._id}/>
                 </div>
               </div>
               {confirmId === pair._id && <div className="notice warning mt-4" role="alertdialog" aria-label="Confirm removing this balance check">

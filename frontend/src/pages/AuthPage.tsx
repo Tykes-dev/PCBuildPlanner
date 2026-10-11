@@ -12,7 +12,10 @@ export function AuthPage() {
   const [params, setParams] = useSearchParams();
   const register = params.get('mode') === 'register';
   const next = params.get('next');
-  const customerDestination = next && (['/builder', '/recommend', '/builds'].includes(next) || /^\/builds\/[a-f0-9]{24}$/.test(next)) ? next : '/';
+  const customerDestination = next && (['/builder', '/recommend', '/builds'].includes(next)
+    || /^\/builds\/[a-f0-9]{24}$/.test(next)
+    // Opening a published shop build in the planner after signing in.
+    || /^\/builder\?from=[a-f0-9]{24}$/.test(next)) ? next : '/';
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 

@@ -7,6 +7,7 @@ import { DataTable, type DataTableColumn } from '../components/DataTable';
 import { Drawer } from '../components/Drawer';
 import { Feedback } from '../components/Feedback';
 import { Parts } from '../components/BuildSummary';
+import { IconButton } from '../components/Icon';
 import { pesos } from '../types';
 import {
   INQUIRY_LABELS, INQUIRY_TONES, REQUEST_LABELS, REQUEST_TONES, buildDate, profileLabel,
@@ -112,11 +113,13 @@ export function AdminInquiries() {
       <p className="break-words">{row.customer?.name || '—'}</p>
       <p className="text-xs text-muted break-words">{row.customer?.email}</p>
     </> },
-    { key: 'budget', header: 'Budget', sortable: true, align: 'right', render: row => pesos(row.budget) },
+    { key: 'budget', header: 'Budget', sortable: true, align: 'right', numeric: true, render: row => pesos(row.budget) },
     { key: 'status', header: 'Status', sortable: true, render: row => <span className={'tag ' + INQUIRY_TONES[row.status]}>{INQUIRY_LABELS[row.status]}</span> },
     { key: 'createdAt', header: 'Sent', sortable: true, hideBelow: 'lg', render: row => <span className="text-xs text-muted">{buildDate(row.createdAt)}</span> },
-    { key: 'actions', header: 'Details', align: 'right', render: row =>
-      <button type="button" className="button secondary !py-1.5" onClick={() => viewInquiry(row)}>Open</button> }
+    { key: 'actions', header: 'Details', align: 'right', render: row => <div className="row-actions">
+      <IconButton icon="open" label={'Open the inquiry from ' + (row.customer?.name || 'this customer')}
+        onClick={() => viewInquiry(row)}/>
+    </div> }
   ];
 
   const requestColumns: DataTableColumn<AdminRequest>[] = [
@@ -128,14 +131,16 @@ export function AdminInquiries() {
       <p className="break-words">{row.owner.name}</p>
       <p className="text-xs text-muted break-words">{row.owner.email}</p>
     </> },
-    { key: 'total', header: 'Total', sortable: true, align: 'right', render: row => <>
+    { key: 'total', header: 'Total', sortable: true, align: 'right', numeric: true, render: row => <>
       <p>{pesos(row.snapshot.total)}</p>
       <p className="text-xs text-muted">of {pesos(row.snapshot.budget)}</p>
     </> },
     { key: 'status', header: 'Status', sortable: true, render: row => <span className={'tag ' + REQUEST_TONES[row.status]}>{REQUEST_LABELS[row.status]}</span> },
     { key: 'createdAt', header: 'Submitted', sortable: true, hideBelow: 'lg', render: row => <span className="text-xs text-muted">{buildDate(row.createdAt)}</span> },
-    { key: 'actions', header: 'Review', align: 'right', render: row =>
-      <button type="button" className="button secondary !py-1.5" onClick={() => { setOpenRequest(row); setRemarks(row.remarks); setError(''); setFeedback(''); }}>Open</button> }
+    { key: 'actions', header: 'Review', align: 'right', render: row => <div className="row-actions">
+      <IconButton icon="open" label={'Review ' + row.snapshot.name}
+        onClick={() => { setOpenRequest(row); setRemarks(row.remarks); setError(''); setFeedback(''); }}/>
+    </div> }
   ];
 
   return <section>

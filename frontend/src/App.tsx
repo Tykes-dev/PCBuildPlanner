@@ -120,7 +120,9 @@ function Application() {
 
   const accountFoot = <>
     <div className="flex items-center justify-between gap-3">
-      <p className="text-xs text-muted truncate">{user ? user.name + ' · ' + user.role : 'Not signed in'}</p>
+      {user
+        ? <p className="account-name">{user.name}</p>
+        : <p className="text-xs text-muted truncate">Not signed in</p>}
       <ThemeToggle/>
     </div>
     {user && <button type="button" className="button secondary w-full mt-3" onClick={signOut} disabled={loggingOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>}
@@ -134,7 +136,7 @@ function Application() {
         <span className="min-w-0 truncate">{brand}</span>
         <button type="button" className="button secondary" onClick={() => setMenuOpen(false)} aria-label="Close navigation"><span aria-hidden="true">✕</span></button>
       </div>
-      {navigation('side-sections !px-0 !py-5')}
+      {navigation(isAdmin ? 'side-sections !px-0 !py-5' : 'drawer-nav')}
       <div className="pt-4 border-t border-stroke">{accountFoot}</div>
     </div>
   </div>;
@@ -147,11 +149,45 @@ function Application() {
   </>;
 
   const account = user && <>
-    <span className="hidden sm:inline text-xs text-muted">{user.name} · {user.role}</span>
-    <button className="nav-link hidden sm:inline-flex" onClick={signOut} disabled={loggingOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+    <span className="account-name">{user.name}</span>
+    <span className="header-divider" aria-hidden="true"/>
+    <button className="nav-link" onClick={signOut} disabled={loggingOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
   </>;
-  const menuButton = !loading && <button type="button" className={'nav-toggle ' + (isAdmin ? 'lg:hidden' : 'md:hidden')}
+  // Shown and hidden by stylesheet, not by a Tailwind responsive class. See
+  // the note beside .nav-toggle in styles.css.
+  const menuButton = !loading && <button type="button" className="nav-toggle"
     onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label="Open navigation"><span aria-hidden="true">☰</span></button>;
+
+  // Guests are offered the two things they can actually do. Everything else
+  // behind the account is pointless until they sign in.
+  const footerColumns: [string, [string, string][]][] = user
+    ? [['Plan', [['/recommend', 'Find a build'], ['/builder', 'Planner'], ['/builds', 'Saved builds']]],
+       ['Browse', [['/components', 'Components'], ['/help', 'Ask the shop']]]]
+    : [['Plan', [['/auth', 'Log in'], ['/auth?mode=register', 'Register']]],
+       ['Browse', [['/components', 'Components']]]];
+
+  const siteFooter = <footer className="site-footer-wrap no-print">
+    <div className="shell footer-grid">
+      <div className="footer-brand">
+        {brand}
+        <p>Plan a desktop PC that fits your budget and actually fits together. Seven parts, checked against each other as you choose them.</p>
+      </div>
+      {footerColumns.map(([title, links]) => <div key={title}>
+        <h2 className="footer-heading">{title}</h2>
+        <div className="footer-links">{links.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}</div>
+      </div>)}
+      <div>
+        <h2 className="footer-heading">Project</h2>
+        <p className="footer-note">CTADWEBL final project<br/>National University Clark<br/>A.Y. 2026 to 2027</p>
+      </div>
+    </div>
+    <div className="footer-bar">
+      <div className="shell footer-bar-inner">
+        <span>PC Build Planner <span className="footer-dot" aria-hidden="true">·</span> Compatibility and budget planning</span>
+        <span>Catalog prices and performance scores are sample values for coursework.</span>
+      </div>
+    </div>
+  </footer>;
 
   if (isAdmin) return <div className="admin-frame">
     <aside className="admin-sidebar no-print" aria-label="Administration sections">
@@ -175,12 +211,12 @@ function Application() {
     </div>
   </div>;
 
-  return <>
-    <header className="site-header no-print">
-      <div className="shell flex items-center justify-between gap-4 py-4">
+  return <div className="site-frame">
+    <header className={'site-header no-print' + (user ? ' nav-wide' : '')}>
+      <div className="shell header-shell">
         {brand}
-        <div className="header-controls">
-          {!loading && navigation('hidden md:flex flex-wrap gap-1')}
+        {!loading && navigation('site-nav')}
+        <div className="header-right">
           {account}
           <ThemeToggle/>
           {menuButton}
@@ -190,11 +226,8 @@ function Application() {
 
     {menuOpen && menuPanel}
     <main className="shell py-8 sm:py-12">{content}</main>
-    <footer className="shell site-footer no-print">
-      <span>PC Build Planner <span className="footer-dot" aria-hidden="true">·</span> Make every part count.</span>
-      <span>CTADWEBL · Compatibility &amp; budget planning</span>
-    </footer>
-  </>;
+    {siteFooter}
+  </div>;
 }
 
 function AccountWorkspace() {

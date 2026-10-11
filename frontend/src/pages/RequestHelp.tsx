@@ -1,146 +1,212 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useSearchParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { api, errorMessage } from '../api/axios';
 import { useApi } from '../hooks/useApi';
+import { useTableState } from '../hooks/useTableState';
+import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { Drawer } from '../components/Drawer';
 import { Feedback } from '../components/Feedback';
+import { IconButton } from '../components/Icon';
 import { Parts } from '../components/BuildSummary';
+import { inquirySchema, toInquiryPayload, type InquiryFormValues } from '../schemas/inquiry';
 import { pesos } from '../types';
 import { INQUIRY_LABELS, INQUIRY_TONES, buildDate, type Inquiry } from '../types/builds';
-
-type Errors = Partial<Record<'useCase' | 'budget' | 'details', string>>;
 
 export function RequestHelp() {
   const [params] = useSearchParams();
   const inquiries = useApi<Inquiry[]>('/inquiries');
   const suggested = Number(params.get('budget'));
-  const [useCase, setUseCase] = useState('');
-  const [budget, setBudget] = useState(Number.isFinite(suggested) && suggested > 0 ? String(suggested) : '');
-  const [details, setDetails] = useState('');
-  const [fields, setFields] = useState<Errors>({});
+  const [askOpen, setAskOpen] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
+  const [open, setOpen] = useState<Inquiry | null>(null);
   const [detail, setDetail] = useState<Inquiry | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
-  const submitting = useRef(false);
 
-  async function openInquiry(id: string) {
-    if (openId === id) { setOpenId(null); setDetail(null); return; }
-    setOpenId(id); setDetail(null); setDetailBusy(true); setError('');
+  // Arriving from the recommendation page with ?budget= pre-fills the amount.
+  const { register, handleSubmit, reset, setError: setFieldError,
+    formState: { errors, isSubmitting } } = useForm<InquiryFormValues>({
+      resolver: zodResolver(inquirySchema),
+      defaultValues: { useCase: '', details: '', budget: Number.isFinite(suggested) && suggested > 0 ? String(suggested) : '' }
+    });
+  const busy = isSubmitting;
+
+  const rows = useMemo(() => (inquiries.data || []).filter(row => !status || row.status === status),
+    [inquiries.data, status]);
+  const table = useTableState<Inquiry>({
+    rows,
+    searchText: row => row.useCase + ' ' + row.details,
+    sortValues: {
+      useCase: row => row.useCase.toLowerCase(),
+      budget: row => row.budget,
+      status: row => row.status,
+      createdAt: row => Date.parse(row.createdAt)
+    },
+    initialSort: { key: 'createdAt', direction: 'desc' }
+  });
+
+  // The list only carries the summary, so the parts list is fetched when the
+  // customer opens one rather than for every row up front.
+  async function view(inquiry: Inquiry) {
+    setOpen(inquiry); setDetail(null); setDetailBusy(true); setError('');
     try {
-      const response = await api.get<Inquiry>('/inquiries/' + id);
+      const response = await api.get<Inquiry>('/inquiries/' + inquiry.id);
       setDetail(response.data);
-    } catch (failure) { setError(errorMessage(failure)); }
+    } catch (failure) { setError(errorMessage(failure)); setOpen(null); }
     finally { setDetailBusy(false); }
   }
 
-  async function respond(id: string, action: 'accept' | 'decline') {
+  async function respond(id: string, choice: 'accept' | 'decline') {
     setError(''); setFeedback(''); setDetailBusy(true);
     try {
-      const response = await api.patch<{ message: string }>(`/inquiries/${id}/${action}`);
+      const response = await api.patch<{ message: string }>(`/inquiries/${id}/${choice}`);
       setFeedback(response.data.message);
-      setOpenId(null); setDetail(null);
+      setOpen(null); setDetail(null);
       inquiries.retry();
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setDetailBusy(false); }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting.current) return;
+  async function onSubmit(values: InquiryFormValues) {
     setError(''); setFeedback('');
-    const errors: Errors = {};
-    if (!useCase.trim() || useCase.trim().length > 120) errors.useCase = 'Say what you will use the PC for, up to 120 characters.';
-    const amount = Number(budget);
-    if (!budget.trim() || !Number.isSafeInteger(amount) || amount <= 0) errors.budget = 'Enter a whole-peso budget above zero.';
-    if (details.length > 1000) errors.details = 'Keep the extra details under 1,000 characters.';
-    setFields(errors);
-    if (Object.keys(errors).length) { setError('Check the highlighted fields.'); return; }
-
-    submitting.current = true; setBusy(true);
     try {
-      await api.post('/inquiries', { useCase: useCase.trim(), budget: amount, details: details.trim() });
-      setFeedback('Sent. The shop will put a parts list together and it will appear below.');
-      setUseCase(''); setBudget(''); setDetails(''); setFields({});
+      await api.post('/inquiries', toInquiryPayload(values));
+      setFeedback('Sent. The shop will put a parts list together and it will appear in your list.');
+      reset({ useCase: '', budget: '', details: '' });
+      setAskOpen(false);
       inquiries.retry();
     } catch (failure) {
       setError(errorMessage(failure));
-      if (isAxiosError(failure) && failure.response?.data?.fields) setFields(failure.response.data.fields as Errors);
-    } finally { submitting.current = false; setBusy(false); }
+      if (isAxiosError(failure) && failure.response?.data?.fields) {
+        for (const [key, message] of Object.entries(failure.response.data.fields as Record<string, unknown>)) {
+          if (['useCase', 'budget', 'details'].includes(key) && typeof message === 'string') {
+            setFieldError(key as keyof InquiryFormValues, { message });
+          }
+        }
+      }
+    }
   }
 
-  return <section className="max-w-4xl mx-auto">
-    <div className="mb-6">
-      <span className="eyebrow">NOTHING FITS?</span><h1>Ask the shop to build it.</h1>
-      <p className="intro !mb-0">Tell them your budget and what you need the PC for. They will put a parts list together and send it back for you to accept.</p>
+  const columns: DataTableColumn<Inquiry>[] = [
+    { key: 'useCase', header: 'What you asked for', sortable: true, render: row => <>
+      <p className="row-title">{row.useCase}</p>
+      {row.details && <p className="row-sub line-clamp-2 break-words">{row.details}</p>}
+    </> },
+    { key: 'budget', header: 'Budget', sortable: true, align: 'right', numeric: true, render: row => pesos(row.budget) },
+    { key: 'status', header: 'Status', sortable: true, render: row =>
+      <span className={'tag ' + INQUIRY_TONES[row.status]}>{INQUIRY_LABELS[row.status]}</span> },
+    { key: 'createdAt', header: 'Sent', sortable: true, hideBelow: 'md', render: row =>
+      <span className="row-sub">{buildDate(row.createdAt)}</span> },
+    { key: 'actions', header: 'Open', align: 'right', render: row => <div className="row-actions">
+      <IconButton icon="open" label={'Open the inquiry for ' + row.useCase} onClick={() => void view(row)} busy={detailBusy && open?.id === row.id}/>
+    </div> }
+  ];
+
+  const waiting = (inquiries.data || []).filter(row => row.status === 'open').length;
+  const ready = (inquiries.data || []).filter(row => row.status === 'answered').length;
+  const shown = detail || open;
+
+  return <>
+    <div className="page-head">
+      <div>
+        <span className="eyebrow">NOTHING FITS?</span>
+        <h1>Ask the shop.</h1>
+        <p className="intro">Say what the PC is for and what you can spend. The shop puts a parts list together and sends it back for you to accept.</p>
+      </div>
+      <button type="button" className="button light" onClick={() => { setAskOpen(true); setError(''); setFeedback(''); }}>
+        New request <span aria-hidden="true">↗</span>
+      </button>
     </div>
+
     {error && <p role="alert" className="notice error mb-5">{error}</p>}
     {feedback && <p role="status" className="notice note mb-5">{feedback}</p>}
 
-    <form className="panel grid gap-5" onSubmit={submit}>
-      <div>
-        <label htmlFor="use-case">What will you use it for?</label>
-        <input id="use-case" value={useCase} maxLength={120} disabled={busy} placeholder="3D rendering and animation"
-          onChange={event => { setUseCase(event.target.value); setFields(current => ({ ...current, useCase: undefined })); }}
-          aria-invalid={Boolean(fields.useCase)}/>
-        {fields.useCase && <p role="alert" className="field-error">{fields.useCase}</p>}
-      </div>
-      <div className="sm:max-w-[16rem]">
-        <label htmlFor="inquiry-budget">Your budget (PHP)</label>
-        <input id="inquiry-budget" type="number" min="1" step="1" value={budget} disabled={busy}
-          onChange={event => { setBudget(event.target.value); setFields(current => ({ ...current, budget: undefined })); }}
-          aria-invalid={Boolean(fields.budget)}/>
-        {fields.budget && <p role="alert" className="field-error">{fields.budget}</p>}
-      </div>
-      <div>
-        <label htmlFor="inquiry-details">Anything else they should know <span className="text-muted font-normal">(optional)</span></label>
-        <input id="inquiry-details" value={details} maxLength={1000} disabled={busy} placeholder="I already have a monitor and keyboard."
-          onChange={event => { setDetails(event.target.value); setFields(current => ({ ...current, details: undefined })); }}
-          aria-invalid={Boolean(fields.details)}/>
-        {fields.details && <p role="alert" className="field-error">{fields.details}</p>}
-      </div>
-      <button type="submit" className="button light justify-self-start" disabled={busy}>{busy ? 'Sending…' : 'Send to the shop'}</button>
-    </form>
+    {Boolean(ready) && <p className="notice warning mb-5">
+      {ready === 1 ? 'One build is ready for you.' : ready + ' builds are ready for you.'} Open it to see the parts and accept or decline.
+    </p>}
 
-    <section className="mt-12">
-      <h2>Your inquiries</h2>
-      <Feedback loading={inquiries.loading} error={inquiries.error} retry={inquiries.retry}/>
-      {inquiries.data && (!inquiries.data.length
-        ? <p className="notice note mt-4">Nothing sent yet. Use the form above and the shop will get back to you here.</p>
-        : <div className="space-y-3 mt-4">
-          {inquiries.data.map(inquiry => <article className="panel" key={inquiry.id}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h3 className="text-base break-words">{inquiry.useCase}</h3>
-                <p className="text-sm text-muted mt-2">{pesos(inquiry.budget)} · sent {buildDate(inquiry.createdAt)}</p>
-                {inquiry.details && <p className="text-sm text-muted mt-2 break-words">{inquiry.details}</p>}
-              </div>
-              <span className={'tag ' + INQUIRY_TONES[inquiry.status]}>{INQUIRY_LABELS[inquiry.status]}</span>
+    <div className="stat-strip">
+      <div><span className="eyebrow">Requests sent</span><strong>{inquiries.data ? inquiries.data.length : '—'}</strong></div>
+      <div><span className="eyebrow">Waiting on the shop</span><strong>{inquiries.data ? waiting : '—'}</strong></div>
+      <div><span className="eyebrow">Ready for you</span><strong>{inquiries.data ? ready : '—'}</strong></div>
+    </div>
+
+    <Feedback loading={inquiries.loading} error={inquiries.error} retry={inquiries.retry}/>
+    {inquiries.data && (!inquiries.data.length
+      ? <section className="panel empty-state">
+          <h2>Nothing sent yet.</h2>
+          <p>If none of the use cases on the recommendation page describe what you need, describe it here instead and the shop will build it by hand.</p>
+          <button type="button" className="button light" onClick={() => setAskOpen(true)}>Send your first request <span aria-hidden="true">↗</span></button>
+        </section>
+      : <DataTable
+          table={table} columns={columns} rowKey={row => row.id}
+          label="Your requests to the shop" searchPlaceholder="Search what you asked for"
+          empty="Nothing sent yet."
+          filters={<label className="w-full sm:w-48"><span className="text-xs">Status</span>
+            <select value={status} onChange={event => setStatus(event.target.value)}>
+              <option value="">All statuses</option>
+              {Object.entries(INQUIRY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select></label>}/>)}
+
+    <Drawer open={askOpen} onClose={() => setAskOpen(false)} title="Ask the shop to build it"
+      description="Three fields. The shop replies with a full parts list."
+      footer={<>
+        <button type="submit" form="ask-form" className="button light" disabled={busy}>{busy ? 'Sending…' : 'Send to the shop'}</button>
+        <button type="button" className="button secondary" onClick={() => setAskOpen(false)} disabled={busy}>Cancel</button>
+      </>}>
+      <form id="ask-form" noValidate className="grid gap-5" onSubmit={handleSubmit(onSubmit)}>
+        <div>
+          <label htmlFor="use-case">What will you use it for?</label>
+          <input id="use-case" {...register('useCase')} maxLength={120} disabled={busy}
+            placeholder="3D rendering and animation" aria-invalid={Boolean(errors.useCase)}/>
+          {errors.useCase && <p role="alert" className="field-error">{errors.useCase.message}</p>}
+        </div>
+        <div className="sm:max-w-[16rem]">
+          <label htmlFor="inquiry-budget">Your budget in pesos</label>
+          <input id="inquiry-budget" type="number" min="1" step="1" {...register('budget')} disabled={busy}
+            aria-invalid={Boolean(errors.budget)}/>
+          {errors.budget && <p role="alert" className="field-error">{errors.budget.message}</p>}
+        </div>
+        <div>
+          <label htmlFor="inquiry-details">Anything else they should know <span className="text-muted font-normal">(optional)</span></label>
+          <textarea id="inquiry-details" className="w-full rounded-lg border border-stroke bg-control px-3 py-2.5 mt-2 text-ink text-sm"
+            rows={3} maxLength={1000} {...register('details')} disabled={busy}
+            placeholder="I already have a monitor and keyboard." aria-invalid={Boolean(errors.details)}/>
+          {errors.details && <p role="alert" className="field-error">{errors.details.message}</p>}
+        </div>
+      </form>
+    </Drawer>
+
+    <Drawer open={Boolean(open)} onClose={() => { setOpen(null); setDetail(null); }} wide
+      title={shown?.useCase || ''}
+      description={shown ? pesos(shown.budget) + ' · sent ' + buildDate(shown.createdAt) : ''}
+      footer={detail?.status === 'answered' ? <>
+        <button type="button" className="button light" onClick={() => void respond(detail.id, 'accept')} disabled={detailBusy}>Accept and save to my builds</button>
+        <button type="button" className="button secondary" onClick={() => void respond(detail.id, 'decline')} disabled={detailBusy}>Decline</button>
+      </> : null}>
+      {detailBusy && !detail && <p role="status" className="text-sm text-muted">Loading…</p>}
+      {detail && <>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className={'tag ' + INQUIRY_TONES[detail.status]}>{INQUIRY_LABELS[detail.status]}</span>
+          {detail.proposal && <strong className="cell-num">{pesos(detail.proposal.total)}</strong>}
+        </div>
+        {detail.details && <p className="feed-quote mt-4"><span>What you asked</span>{detail.details}</p>}
+        {detail.reply && <p className="feed-quote shop mt-3"><span>From the shop</span>{detail.reply}</p>}
+        {detail.proposal
+          ? <div className="mt-5">
+              <div className="panel-head"><h3 className="text-base">{detail.proposal.name}</h3><span className="row-sub">{detail.proposal.items.length} parts</span></div>
+              <Parts items={detail.proposal.items}/>
+              <div className="panel-total"><strong>Proposed total</strong><strong className="cell-num">{pesos(detail.proposal.total)}</strong></div>
+              {detail.status === 'answered' && <p className="panel-foot">Accepting saves a copy to your account. You can open it in the planner afterwards and change anything.</p>}
             </div>
-            {inquiry.reply && <p className="text-sm mt-3 whitespace-pre-wrap break-words"><span className="font-semibold">From the shop: </span>{inquiry.reply}</p>}
-            {inquiry.status === 'accepted' && inquiry.acceptedBuildId &&
-              <Link className="button secondary mt-4" to={'/builds/' + inquiry.acceptedBuildId}>Open the saved build <span aria-hidden="true">↗</span></Link>}
-            {(inquiry.status === 'answered' || inquiry.proposedBuildId) &&
-              <button type="button" className="button secondary mt-4" onClick={() => openInquiry(inquiry.id)} disabled={detailBusy}>
-                {openId === inquiry.id ? 'Hide the parts list' : 'See the parts list'}
-              </button>}
-            {openId === inquiry.id && <div className="mt-5 border-t border-stroke pt-5">
-              {detailBusy && !detail && <p role="status" className="text-sm text-muted">Loading the parts list…</p>}
-              {detail?.proposal && <>
-                <div className="flex flex-wrap justify-between gap-3"><h4 className="text-sm font-semibold">{detail.proposal.name}</h4><strong>{pesos(detail.proposal.total)}</strong></div>
-                <div className="mt-3"><Parts items={detail.proposal.items}/></div>
-                {detail.status === 'answered' && <div className="flex flex-wrap gap-3 mt-5">
-                  <button type="button" className="button" onClick={() => respond(inquiry.id, 'accept')} disabled={detailBusy}>Accept and save to my builds</button>
-                  <button type="button" className="button secondary" onClick={() => respond(inquiry.id, 'decline')} disabled={detailBusy}>Decline</button>
-                </div>}
-                <p className="text-xs text-muted mt-4">Accepting saves a copy to your account. You can open it in the planner and change anything.</p>
-              </>}
-              {detail && !detail.proposal && <p className="text-sm text-muted">The shop has not attached a parts list yet.</p>}
-            </div>}
-          </article>)}
-        </div>)}
-    </section>
-  </section>;
+          : <p className="notice note mt-5">The shop has not attached a parts list yet. It will show up here once they answer.</p>}
+        {detail.status === 'accepted' && detail.acceptedBuildId &&
+          <Link className="button secondary mt-5" to={'/builds/' + detail.acceptedBuildId}>Open the saved build <span aria-hidden="true">↗</span></Link>}
+      </>}
+    </Drawer>
+  </>;
 }

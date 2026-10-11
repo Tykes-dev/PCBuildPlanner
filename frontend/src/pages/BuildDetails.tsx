@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, errorMessage } from '../api/axios';
 import { Parts } from '../components/BuildSummary';
+import { Drawer } from '../components/Drawer';
 import { Feedback } from '../components/Feedback';
+import { IconButton } from '../components/Icon';
 import { useApi } from '../hooks/useApi';
 import { CATEGORIES, LABELS, pesos, type Plan } from '../types';
 import { REQUEST_LABELS, REQUEST_TONES, buildDate, profileLabel, type BuildRequest, type ReopenedBuild, type SavedBuild } from '../types/builds';
@@ -18,7 +20,9 @@ export function BuildDetails({ setPlan }: { setPlan: (plan: Plan) => void }) {
   const actionInProgress = useRef(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [editingName, setEditingName] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [openRequest, setOpenRequest] = useState<BuildRequest | null>(null);
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
   const requests = useApi<BuildRequest[]>('/requests');
@@ -27,7 +31,7 @@ export function BuildDetails({ setPlan }: { setPlan: (plan: Plan) => void }) {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setLoadError(''); setBuild(null); setError(''); setSuccess('');
-    setEditingName(false); setNote(''); setNewRequests([]);
+    setRenaming(false); setSubmitOpen(false); setNote(''); setNewRequests([]);
     api.get<SavedBuild>('/builds/' + id, { signal: controller.signal })
       .then(response => { if (!controller.signal.aborted) { setBuild(response.data); setName(response.data.name); } })
       .catch(failure => { if (!controller.signal.aborted) setLoadError(errorMessage(failure)); })
@@ -38,8 +42,10 @@ export function BuildDetails({ setPlan }: { setPlan: (plan: Plan) => void }) {
   const history = [...(requests.data || []), ...newRequests]
     .filter((request, index, all) => request.buildId === id && all.findIndex(item => item.id === request.id) === index)
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
-  const hasActiveRequest = history.some(request => request.status === 'pending' || request.status === 'approved');
-  const missingCategories = CATEGORIES.filter(category => !build?.items.some(item => item.component.category === category));
+  const active = history.find(request => request.status === 'pending' || request.status === 'approved') || null;
+  const missing = CATEGORIES.filter(category => !build?.items.some(item => item.component.category === category));
+  const over = build ? build.total > build.budget : false;
+  const used = build && build.budget ? Math.min(100, Math.round((build.total / build.budget) * 100)) : 0;
 
   async function rename(event: FormEvent) {
     event.preventDefault();
@@ -48,7 +54,7 @@ export function BuildDetails({ setPlan }: { setPlan: (plan: Plan) => void }) {
     actionInProgress.current = true; setAction('rename'); setError(''); setSuccess('');
     try {
       const response = await api.patch<SavedBuild>('/builds/' + build.id, { name: name.trim() });
-      setBuild(response.data); setName(response.data.name); setEditingName(false); setSuccess('Build renamed.');
+      setBuild(response.data); setName(response.data.name); setRenaming(false); setSuccess('Build renamed.');
     } catch (failure) { setError(errorMessage(failure)); }
     finally { actionInProgress.current = false; setAction(''); }
   }
@@ -73,14 +79,14 @@ export function BuildDetails({ setPlan }: { setPlan: (plan: Plan) => void }) {
   }
   async function submitRequest(event: FormEvent) {
     event.preventDefault();
-    if (!build || actionInProgress.current || hasActiveRequest) return;
+    if (!build || actionInProgress.current || active) return;
     actionInProgress.current = true; setAction('submit'); setError(''); setSuccess('');
     try {
       const response = await api.post<BuildRequest>('/requests', { buildId: build.id, note: note.trim() });
-      setNewRequests(current => [response.data, ...current]); setNote('');
-      setSuccess('Your build request has been submitted. Follow its status below or in Saved builds.');
+      setNewRequests(current => [response.data, ...current]); setNote(''); setSubmitOpen(false);
+      setSuccess('Request sent. Its status is in the request history below.');
       requests.retry();
-    } catch (failure) { setError(errorMessage(failure)); }
+    } catch (failure) { setError(errorMessage(failure)); setSubmitOpen(false); }
     finally { actionInProgress.current = false; setAction(''); }
   }
 
@@ -88,63 +94,133 @@ export function BuildDetails({ setPlan }: { setPlan: (plan: Plan) => void }) {
     <Link to="/builds" className="text-link mb-5"><span aria-hidden="true">←</span> Saved builds</Link>
     <Feedback loading={loading} error={loadError} retry={() => setAttempt(current => current + 1)}/>
     {build && <>
-      <div className="flex flex-col sm:flex-row justify-between gap-5 items-start">
-        <div className="min-w-0 flex-1"><span className="eyebrow">BUILD DETAILS · {profileLabel(build.profileSlug)}</span><h1 className="break-words">{build.name}</h1><p className="intro mb-0">Saved {buildDate(build.createdAt)} · Updated {buildDate(build.updatedAt)}</p></div>
-        <div className="flex flex-wrap shrink-0 gap-3 no-print">
-          <button className="button" disabled={!!action} onClick={() => void reopen()}>{action === 'reopen' ? 'Opening…' : 'Reopen in planner'}</button>
-          <button className="button secondary" disabled={!!action} onClick={() => void duplicate()}>{action === 'duplicate' ? 'Duplicating…' : 'Duplicate'}</button>
+      <div className="page-head">
+        <div className="min-w-0">
+          <span className="eyebrow">{profileLabel(build.profileSlug)} · SAVED {buildDate(build.createdAt).toUpperCase()}</span>
+          <div className="title-row">
+            <h1 className="break-words">{build.name}</h1>
+            <IconButton icon="edit" label="Rename this build" onClick={() => { setName(build.name); setRenaming(true); }} disabled={Boolean(action)}/>
+          </div>
+          <p className="intro mb-0">Last updated {buildDate(build.updatedAt)}.</p>
+        </div>
+        <div className="head-actions no-print">
+          <button className="button light" disabled={Boolean(action)} onClick={() => void reopen()}>{action === 'reopen' ? 'Opening…' : 'Reopen in planner'}</button>
+          <button className="button secondary" disabled={Boolean(action)} onClick={() => void duplicate()}>{action === 'duplicate' ? 'Duplicating…' : 'Duplicate'}</button>
         </div>
       </div>
+
       {error && <p className="notice error mt-5" role="alert">{error}</p>}
       {success && <p className="notice note mt-5" role="status">{success}</p>}
-      <div className="grid sm:grid-cols-3 gap-4 mt-6">
-        <div className="panel"><span className="eyebrow">SAVED TOTAL</span><p className="text-2xl font-semibold mt-2">{pesos(build.total)}</p></div>
-        <div className="panel"><span className="eyebrow">BUDGET</span><p className="text-2xl font-semibold mt-2">{pesos(build.budget)}</p><p className={'text-xs mt-2 ' + (build.total > build.budget ? 'text-danger' : 'text-muted')}>{pesos(Math.abs(build.budget - build.total))} {build.total > build.budget ? 'over budget' : 'remaining'}</p></div>
-        <div className="panel"><span className="eyebrow">SELECTED CATEGORIES</span><p className="text-2xl font-semibold mt-2">{CATEGORIES.length - missingCategories.length} / {CATEGORIES.length}</p><p className="text-xs text-muted mt-2">{missingCategories.length ? 'Draft in progress' : 'All categories selected'}</p></div>
-      </div>
-      <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 mt-6 items-start">
-        <section className="panel">
-          <div className="flex flex-wrap justify-between gap-3 items-center"><h2>Saved parts</h2><span className="tag">Price snapshot</span></div>
-          <p className="text-sm text-muted mt-3">These parts and prices were captured when you saved. Reopening refreshes catalog prices and removes unavailable parts so you can choose replacements.</p>
-          {build.items.length ? <Parts items={build.items}/> : <p className="text-muted mt-5">No parts selected in this draft yet.</p>}
-          {!!missingCategories.length && <p className="notice note mt-4">Still to choose: {missingCategories.map(category => LABELS[category]).join(', ')}.</p>}
-          <div className="flex flex-wrap justify-between gap-3 border-t border-stroke pt-4 mt-4"><strong>Total</strong><strong>{pesos(build.total)}</strong></div>
-        </section>
-        <div className="space-y-5 no-print">
-          <section className="panel">
-            <h2>Build name</h2>
-            {editingName ? <form className="mt-4" onSubmit={rename}>
-              <label htmlFor="rename-build">Name<input id="rename-build" value={name} onChange={event => setName(event.target.value)} maxLength={100} required autoFocus disabled={!!action}/></label>
-              <div className="flex flex-wrap gap-3 mt-4"><button className="button" disabled={!!action}>{action === 'rename' ? 'Renaming…' : 'Save name'}</button><button type="button" className="button secondary" disabled={!!action} onClick={() => { setEditingName(false); setName(build.name); }}>Cancel</button></div>
-            </form> : <><p className="text-sm text-muted mt-3 break-words">{build.name}</p><button className="button secondary mt-4" disabled={!!action} onClick={() => setEditingName(true)}>Rename build</button></>}
-          </section>
-          <section className="panel">
-            <span className="eyebrow">ADMIN REVIEW</span><h2 className="mt-2">Submit a build request.</h2>
-            <p className="text-sm text-muted mt-3">Submit these selected parts using current catalog prices and specifications. Reopen the planner first to review changes. Complete all categories and resolve compatibility or stock issues before submitting.</p>
-            {hasActiveRequest ? <p className="notice warning mt-4">You already have a pending or approved request for this build. Follow its status below.</p> : <form className="mt-4" onSubmit={submitRequest}>
-              <label htmlFor="request-note">Note to the administrator (optional)</label>
-              <textarea id="request-note" className="w-full rounded-lg border border-stroke bg-control px-3 py-2.5 mt-2 text-ink text-sm" rows={3} maxLength={1000} placeholder="Anything you want the reviewer to know?" value={note} disabled={!!action} onChange={event => setNote(event.target.value)}/>
-              <button className="button mt-4" disabled={!!action}>{action === 'submit' ? 'Submitting…' : 'Submit build request'}</button>
-            </form>}
-            <p className="text-xs text-muted mt-4">Requests keep their own copy of the submitted build. Saving or renaming later does not change an existing request.</p>
-          </section>
+
+      <div className="summary-bar">
+        <div><span className="eyebrow">Saved total</span><strong className="cell-num">{pesos(build.total)}</strong></div>
+        <div><span className="eyebrow">Budget</span><strong className="cell-num">{pesos(build.budget)}</strong></div>
+        <div><span className="eyebrow">{over ? 'Over budget' : 'Still available'}</span>
+          <strong className={'cell-num ' + (over ? 'text-danger' : '')}>{pesos(Math.abs(build.budget - build.total))}</strong></div>
+        <div><span className="eyebrow">Categories</span><strong className="cell-num">{CATEGORIES.length - missing.length} / {CATEGORIES.length}</strong></div>
+        <div className="summary-meter">
+          <span className="budget-track" aria-hidden="true"><span className={over ? 'over' : ''} style={{ width: used + '%' }}/></span>
+          <p className="row-sub">{used}% of the budget committed</p>
         </div>
       </div>
+
+      <div className="detail-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Saved parts</h2>
+            <span className="tag">Price snapshot</span>
+          </div>
+          <p className="panel-note">These prices were captured when you saved. Reopening refreshes them and removes anything no longer available.</p>
+          {build.items.length
+            ? <Parts items={build.items}/>
+            : <p className="text-muted text-sm mt-5">No parts in this draft yet.</p>}
+          {Boolean(missing.length) && <p className="notice note mt-4">Still to choose: {missing.map(category => LABELS[category]).join(', ')}.</p>}
+          <div className="panel-total"><strong>Total</strong><strong className="cell-num">{pesos(build.total)}</strong></div>
+        </section>
+
+        <section className="panel no-print">
+          <div className="panel-head">
+            <h2>Shop review</h2>
+            {active && <span className={'tag ' + REQUEST_TONES[active.status]}>{REQUEST_LABELS[active.status]}</span>}
+          </div>
+          {active
+            ? <>
+              <p className="panel-note">Sent {buildDate(active.createdAt)}. The parts and prices in that request are frozen, so editing this build will not change it.</p>
+              {active.remarks && <p className="notice note mt-4 whitespace-pre-wrap break-words"><strong>From the shop: </strong>{active.remarks}</p>}
+            </>
+            : <>
+              <p className="panel-note">Send these parts to the shop at current catalog prices. All seven categories must be filled and the compatibility checks must pass.</p>
+              <ul className="ready-list">
+                <li className={missing.length ? 'no' : 'yes'}>{missing.length ? missing.length + ' categories still empty' : 'All seven categories chosen'}</li>
+                <li className={over ? 'no' : 'yes'}>{over ? 'Over budget, which the shop will see' : 'Within your budget'}</li>
+              </ul>
+              <button type="button" className="button light mt-5" disabled={Boolean(action) || !build.items.length}
+                onClick={() => setSubmitOpen(true)}>Submit for review <span aria-hidden="true">↗</span></button>
+            </>}
+          <p className="panel-foot">A request keeps its own copy of the build. Renaming or editing later never rewrites what you sent.</p>
+        </section>
+      </div>
+
       <section className="mt-8 no-print">
-        <h2 className="mb-4">Recent requests for this build</h2>{(requests.data?.length || 0) >= 200 && <p className="text-xs text-muted mb-4">From your 200 most recent requests.</p>}
+        <div className="panel-head mb-4">
+          <h2>Request history</h2>
+          <span className="row-sub">{history.length} for this build</span>
+        </div>
         <Feedback loading={requests.loading && !newRequests.length} error={requests.error} retry={requests.retry}/>
-        {!requests.loading && !requests.error && !history.length && <p className="panel text-sm text-muted">No requests submitted for this build yet.</p>}
-        <div className="space-y-3">{history.map(request => <article className="panel" key={request.id}>
-          <div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold break-words">{request.snapshot.name}</h3><p className="text-xs text-muted mt-2">Submitted {buildDate(request.createdAt)} · Updated {buildDate(request.updatedAt)} · {pesos(request.snapshot.total)}</p></div><span className={'tag ' + REQUEST_TONES[request.status]}>{REQUEST_LABELS[request.status]}</span></div>
-          <details className="mt-4"><summary className="cursor-pointer text-sm font-semibold">View submitted parts ({request.snapshot.items.length})</summary><div className="mt-3"><Parts items={request.snapshot.items}/></div></details>
-          {request.note && <p className="text-sm text-muted mt-3 whitespace-pre-wrap break-words"><span className="font-semibold">Your note: </span>{request.note}</p>}
-          {request.remarks && <p className="notice note mt-3 whitespace-pre-wrap break-words"><strong>Administrator remarks: </strong>{request.remarks}</p>}
-        </article>)}</div>
+        {!requests.loading && !requests.error && !history.length && <p className="panel empty-state"><span>Nothing submitted for this build yet.</span></p>}
+        <ol className="request-feed">
+          {history.map(request => <li key={request.id}>
+            <span className={'feed-dot ' + request.status} aria-hidden="true"/>
+            <div className="feed-body">
+              <div className="feed-head">
+                <div>
+                  <p className="row-title">{REQUEST_LABELS[request.status]}</p>
+                  <p className="row-sub">Sent {buildDate(request.createdAt)} · updated {buildDate(request.updatedAt)} · <span className="cell-num">{pesos(request.snapshot.total)}</span></p>
+                </div>
+                <IconButton icon="open" label={'See the parts sent on ' + buildDate(request.createdAt)} onClick={() => setOpenRequest(request)}/>
+              </div>
+              {request.note && <p className="feed-quote"><span>Your note</span>{request.note}</p>}
+              {request.remarks && <p className="feed-quote shop"><span>From the shop</span>{request.remarks}</p>}
+            </div>
+          </li>)}
+        </ol>
       </section>
+
+      <Drawer open={renaming} onClose={() => setRenaming(false)} title="Rename build"
+        footer={<>
+          <button type="submit" form="rename-form" className="button light" disabled={Boolean(action)}>{action === 'rename' ? 'Saving…' : 'Save name'}</button>
+          <button type="button" className="button secondary" onClick={() => setRenaming(false)} disabled={Boolean(action)}>Cancel</button>
+        </>}>
+        <form id="rename-form" onSubmit={rename}>
+          <label htmlFor="rename-build">Build name
+            <input id="rename-build" value={name} onChange={event => setName(event.target.value)} maxLength={100} required autoFocus disabled={Boolean(action)}/>
+          </label>
+        </form>
+        <p className="panel-foot">Up to 100 characters. Requests you already sent keep the name they were sent with.</p>
+      </Drawer>
+
+      <Drawer open={submitOpen} onClose={() => setSubmitOpen(false)} title="Submit for review"
+        description="The shop checks the parts against the live catalog before accepting."
+        footer={<>
+          <button type="submit" form="request-form" className="button light" disabled={Boolean(action)}>{action === 'submit' ? 'Sending…' : 'Send request'}</button>
+          <button type="button" className="button secondary" onClick={() => setSubmitOpen(false)} disabled={Boolean(action)}>Cancel</button>
+        </>}>
+        <form id="request-form" onSubmit={submitRequest}>
+          <label htmlFor="request-note">Note for the shop <span className="text-muted font-normal">(optional)</span></label>
+          <textarea id="request-note" className="w-full rounded-lg border border-stroke bg-control px-3 py-2.5 mt-2 text-ink text-sm"
+            rows={4} maxLength={1000} placeholder="Anything the reviewer should know?" value={note}
+            disabled={Boolean(action)} onChange={event => setNote(event.target.value)}/>
+        </form>
+      </Drawer>
+
+      <Drawer open={Boolean(openRequest)} onClose={() => setOpenRequest(null)} wide
+        title={openRequest ? openRequest.snapshot.name : ''}
+        description={openRequest ? 'Sent ' + buildDate(openRequest.createdAt) + ' · ' + openRequest.snapshot.items.length + ' parts' : ''}>
+        {openRequest && <>
+          <Parts items={openRequest.snapshot.items}/>
+          <div className="panel-total"><strong>Submitted total</strong><strong className="cell-num">{pesos(openRequest.snapshot.total)}</strong></div>
+        </>}
+      </Drawer>
     </>}
   </>;
 }
-
-
-
-

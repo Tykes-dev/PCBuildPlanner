@@ -267,3 +267,381 @@
   :root[data-theme] .notice { color: #000; background: #fff; border-color: #ccc; }
   h1 { font-size: 24px; }
 }
+
+
+
+/* ---- Data tables ----------------------------------------------------- */
+/* One bordered frame holds the search row, the table and the pager, so a list
+   reads as a single piece of equipment rather than three stacked parts. */
+.data-panel { border: 1px solid var(--color-stroke); border-radius: 12px; background: var(--color-surface); overflow: hidden; }
+.table-top { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--color-stroke); }
+.table-top > label { margin: 0; }
+.table-search { position: relative; flex: 1 1 14rem; min-width: 0; }
+.table-search > svg { position: absolute; left: 11px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px; color: var(--color-muted); pointer-events: none; }
+.table-search input { margin-top: 0; height: 38px; padding: 0 12px 0 34px; border-radius: 8px; background: var(--color-control); }
+.table-tools { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.data-scroll { overflow-x: auto; }
+.data-table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 13.5px; }
+.data-table thead th { padding: 9px 14px; background: var(--color-control); border-bottom: 1px solid var(--color-stroke); font-size: 11.5px; font-weight: 600; color: var(--color-muted); white-space: nowrap; }
+.data-table tbody td { padding: 11px 14px; border-top: 1px solid var(--color-stroke); vertical-align: top; }
+.data-table tbody tr:first-child td { border-top: 0; }
+.data-table tbody tr:hover td { background: var(--color-control); }
+/* The amber edge is the same signal the active sidebar link uses, so a hovered
+   row and a current page are marked the same way across the console. */
+.data-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--color-signal); }
+.data-table .cell-right { text-align: right; }
+/* Money and scores are read down the column, so they get tabular figures. */
+.data-table .cell-num { font-family: Consolas, 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
+
+.col-sort { display: inline-flex; align-items: center; gap: 5px; color: inherit; }
+.col-sort > svg { width: 12px; height: 12px; flex: none; opacity: 0.4; }
+.col-sort:hover { color: var(--color-ink); }
+.col-sort:hover > svg { opacity: 0.8; }
+.col-sort.sorted { color: var(--color-ink); }
+.col-sort.sorted > svg { opacity: 1; color: var(--color-signal); }
+.cell-right .col-sort { flex-direction: row-reverse; }
+
+.table-empty { padding: 34px 18px; text-align: center; font-size: 13.5px; color: var(--color-muted); }
+.table-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--color-stroke); background: var(--color-control); font-size: 11.5px; color: var(--color-muted); }
+.table-foot label { font-size: 11.5px; font-weight: 400; }
+.table-foot .page-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-size { width: auto; margin: 0; padding: 4px 8px; font-size: 11.5px; border-radius: 6px; }
+.pager { display: flex; align-items: center; gap: 4px; }
+
+/* ---- Icon buttons ---------------------------------------------------- */
+/* Icon-only controls carry their name in aria-label and title, so the action
+   is announced to a screen reader and shown on hover. */
+.row-actions { display: inline-flex; justify-content: flex-end; gap: 2px; }
+.icon-button { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: none; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--color-muted); }
+.icon-button > svg { width: 16px; height: 16px; }
+.icon-button:hover:not(:disabled) { color: var(--color-ink); background: var(--color-surface); border-color: var(--color-stroke); }
+.icon-button.danger:hover:not(:disabled) { color: var(--color-danger); border-color: var(--color-danger); }
+.icon-button:disabled { opacity: 0.35; cursor: not-allowed; }
+@media (max-width: 639px) { .icon-button { width: 40px; height: 40px; } }
+@media (prefers-reduced-motion: no-preference) {
+  .icon-button { transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+  .icon-spin { animation: icon-spin 820ms linear infinite; transform-origin: 50% 50%; }
+  @keyframes icon-spin { to { transform: rotate(360deg); } }
+}
+
+/* ---- Site frame ------------------------------------------------------ */
+/* The footer sits at the bottom of a short page instead of floating up
+   under the last paragraph. */
+.site-frame { display: flex; flex-direction: column; min-height: 100dvh; }
+.site-frame > main { flex: 1 0 auto; width: 100%; }
+/* The content column was capped well under the width of a desktop screen,
+   which left the header looking squeezed between two empty margins. */
+.shell { max-width: 1600px; }
+
+/* ---- Customer header ------------------------------------------------- */
+.site-header { position: sticky; top: 0; z-index: 50; }
+.header-shell { display: flex; align-items: center; gap: 26px; height: 68px; }
+.header-shell .brand { flex: none; white-space: nowrap; }
+.site-nav { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.site-nav .nav-link { padding: 9px 13px; font-size: 14px; white-space: nowrap; }
+.header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+.header-divider { width: 1px; height: 22px; flex: none; background: var(--color-stroke); }
+/* The name is the one personal thing in the bar, so it carries the signal
+   colour. The role is not shown: the console a person is looking at already
+   tells them which kind of account they are using. */
+.account-name { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--color-signal); }
+
+/* The menu button is shown by plain CSS rather than a Tailwind responsive
+   class. Unlayered rules beat layered utilities, so a `display` declared here
+   would override `md:hidden` at every width. */
+.site-header .nav-toggle { display: none; }
+.admin-topbar .nav-toggle { display: inline-flex; }
+@media (max-width: 767px) {
+  .site-header .site-nav { display: none; }
+  .site-header .nav-toggle { display: inline-flex; }
+}
+/* A signed-in customer carries six links, so that bar runs out of room long
+   before a guest's three do. */
+@media (max-width: 1119px) {
+  .site-header.nav-wide .site-nav { display: none; }
+  .site-header.nav-wide .nav-toggle { display: inline-flex; }
+}
+@media (max-width: 639px) {
+  .header-shell { height: 58px; gap: 12px; }
+  .account-name, .header-divider, .header-right .nav-link { display: none; }
+}
+
+/* ---- Site footer ----------------------------------------------------- */
+.site-footer-wrap { flex: none; margin-top: 72px; border-top: 1px solid var(--color-stroke); background: var(--color-surface); }
+.footer-grid { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr; gap: 40px; padding-top: 46px; padding-bottom: 38px; }
+.footer-brand > p { margin-top: 16px; max-width: 32ch; font-size: 13px; line-height: 1.85; color: var(--color-muted); }
+.footer-heading { margin-bottom: 14px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-muted); }
+.footer-links { display: flex; flex-direction: column; gap: 11px; }
+.footer-links a { width: fit-content; font-size: 13.5px; color: var(--color-ink); }
+.footer-links a:hover { color: var(--color-signal); }
+.footer-note { font-size: 13px; line-height: 1.95; color: var(--color-muted); }
+.footer-bar { border-top: 1px solid var(--color-stroke); background: var(--color-canvas); }
+.footer-bar-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding-top: 15px; padding-bottom: 15px; font-size: 11.5px; color: var(--color-muted); }
+@media (max-width: 899px) { .footer-grid { grid-template-columns: 1fr 1fr; gap: 34px; } }
+@media (max-width: 559px) { .footer-grid { grid-template-columns: 1fr; gap: 28px; padding-top: 36px; } .site-footer-wrap { margin-top: 52px; } }
+
+/* A customer's menu is a flat list, so it reads with a list rhythm instead of
+   the sidebar's grouped-section spacing. */
+.drawer-nav { display: flex; flex-direction: column; gap: 2px; padding: 18px 0; }
+.drawer-nav .nav-link { display: block; padding: 11px 12px; font-size: 14.5px; border-left: 3px solid transparent; }
+.drawer-nav .nav-link.active { background: var(--color-control); font-weight: 600; border-left-color: var(--color-signal); }
+.drawer-nav .nav-link.active::after { display: none; }
+
+/* ---- Shared page furniture ------------------------------------------ */
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+.page-head .intro { margin-bottom: 0; }
+.title-row { display: flex; align-items: center; gap: 8px; }
+.head-actions { display: flex; flex-wrap: wrap; gap: 10px; flex: none; }
+.row-title { display: block; font-weight: 600; word-break: break-word; }
+a.row-title:hover { color: var(--color-signal); }
+.row-sub { margin-top: 3px; font-size: 11.5px; line-height: 1.6; color: var(--color-muted); }
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.panel-note { margin-top: 10px; font-size: 12.5px; line-height: 1.75; color: var(--color-muted); }
+.panel-foot { margin-top: 18px; font-size: 11.5px; line-height: 1.7; color: var(--color-muted); }
+.panel-total { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--color-stroke); }
+.table-note { margin-top: 12px; font-size: 11.5px; color: var(--color-muted); }
+.empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 34px; }
+.empty-state p, .empty-state > span { max-width: 48ch; font-size: 13.5px; line-height: 1.8; color: var(--color-muted); }
+
+/* A thin band of figures. Four small numbers read faster here than four
+   full-height cards, which is what this page had. */
+.stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); border: 1px solid var(--color-stroke); border-radius: 12px; background: var(--color-surface); overflow: hidden; margin-bottom: 22px; }
+.stat-strip > div { padding: 14px 18px; border-left: 1px solid var(--color-stroke); }
+.stat-strip > div:first-child { border-left: 0; }
+.stat-strip strong { display: block; margin-top: 6px; font-size: 25px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.parts-meter { display: flex; align-items: center; gap: 9px; min-width: 5.5rem; }
+.parts-meter .score-track { width: 46px; flex: none; }
+
+/* ---- Build details --------------------------------------------------- */
+.summary-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) 1.4fr; gap: 0; border: 1px solid var(--color-stroke); border-radius: 12px; background: var(--color-surface); overflow: hidden; margin-top: 22px; }
+.summary-bar > div { padding: 15px 18px; border-left: 1px solid var(--color-stroke); }
+.summary-bar > div:first-child { border-left: 0; }
+.summary-bar strong { display: block; margin-top: 6px; font-size: 19px; font-weight: 600; }
+.summary-meter { display: flex; flex-direction: column; justify-content: center; gap: 9px; }
+.detail-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; align-items: start; margin-top: 22px; }
+.ready-list { margin-top: 16px; display: flex; flex-direction: column; gap: 9px; font-size: 13px; }
+.ready-list li { display: flex; align-items: flex-start; gap: 9px; }
+.ready-list li::before { content: ''; width: 7px; height: 7px; margin-top: 6px; flex: none; border-radius: 50%; background: var(--color-muted); }
+.ready-list li.yes::before { background: var(--color-signal); }
+.ready-list li.no::before { background: var(--color-danger); }
+
+/* A request is a sequence of events, so it is drawn as one. */
+.request-feed { display: flex; flex-direction: column; gap: 0; }
+.request-feed > li { position: relative; display: flex; gap: 16px; padding: 0 0 20px 0; }
+.request-feed > li::before { content: ''; position: absolute; left: 5px; top: 16px; bottom: 0; width: 1px; background: var(--color-stroke); }
+.request-feed > li:last-child { padding-bottom: 0; }
+.request-feed > li:last-child::before { display: none; }
+.feed-dot { width: 11px; height: 11px; flex: none; margin-top: 5px; border-radius: 50%; border: 2px solid var(--color-surface); background: var(--color-muted); box-shadow: 0 0 0 1px var(--color-stroke); }
+.feed-dot.pending { background: var(--color-signal); }
+.feed-dot.approved, .feed-dot.completed { background: var(--color-signal-fill); }
+.feed-dot.rejected { background: var(--color-danger); }
+.feed-body { flex: 1 1 auto; min-width: 0; padding-bottom: 4px; }
+.feed-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.feed-quote { margin-top: 10px; padding: 10px 14px; border-left: 2px solid var(--color-stroke); background: var(--color-control); border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+.feed-quote > span { display: block; margin-bottom: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-muted); }
+.feed-quote.shop { border-left-color: var(--color-signal); }
+
+/* ---- Catalog --------------------------------------------------------- */
+.catalog-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 6px; }
+.catalog-bar .table-search { flex: 1 1 18rem; }
+.catalog-sort { flex: 0 1 15rem; margin: 0; }
+.catalog-count { margin: 20px 0 16px; font-size: 12px; color: var(--color-muted); }
+.grid-foot { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 26px; font-size: 12px; color: var(--color-muted); }
+.grid-foot .page-count { font-variant-numeric: tabular-nums; }
+
+/* ---- Landing: the three steps ---------------------------------------- */
+/* The steps genuinely are a sequence, so they sit on one trace instead of in
+   three identical boxes. */
+.trace-rail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; position: relative; padding-top: 30px; }
+.trace-rail::before { content: ''; position: absolute; top: 5px; left: 5px; right: 5px; height: 1px; background: var(--color-stroke); }
+.trace-rail > li { position: relative; display: flex; flex-direction: column; align-items: flex-start; }
+.trace-node { position: absolute; top: -30px; left: 0; width: 11px; height: 11px; border-radius: 50%; background: var(--color-signal); box-shadow: 0 0 0 4px var(--color-canvas); }
+.trace-rail h3 { margin-top: 10px; font-size: 17px; font-weight: 600; }
+.trace-rail p { margin: 11px 0 20px; max-width: 34ch; font-size: 13px; line-height: 1.8; color: var(--color-muted); }
+.trace-rail .text-link { margin-top: auto; }
+
+/* ---- Landing: closing band ------------------------------------------- */
+.cta-band { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 26px; margin-top: 60px; padding: 38px 36px; border: 1px solid var(--color-stroke); border-top: 3px solid var(--color-signal); border-radius: 14px; background: var(--color-surface); }
+.cta-band h2 { margin-top: 12px; font-size: 31px; line-height: 1.16; letter-spacing: -0.04em; }
+.cta-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+@media (max-width: 1023px) {
+  .detail-grid { grid-template-columns: 1fr; }
+  .summary-bar { grid-template-columns: repeat(2, 1fr); }
+  .summary-bar > div:nth-child(odd) { border-left: 0; }
+  .summary-bar > div { border-top: 1px solid var(--color-stroke); }
+  .summary-bar > div:nth-child(-n+2) { border-top: 0; }
+  .summary-meter { grid-column: 1 / -1; }
+}
+@media (max-width: 767px) {
+  .trace-rail { grid-template-columns: 1fr; gap: 26px; padding-top: 0; padding-left: 26px; }
+  .trace-rail::before { top: 5px; bottom: 5px; left: 5px; right: auto; width: 1px; height: auto; }
+  .trace-node { top: 5px; left: -26px; }
+  .trace-rail p { margin-bottom: 14px; }
+  .cta-band { padding: 28px 22px; }
+  .cta-band h2 { font-size: 26px; }
+}
+@media (max-width: 639px) {
+  .summary-bar { grid-template-columns: 1fr; }
+  .summary-bar > div { border-left: 0; border-top: 1px solid var(--color-stroke); }
+  .summary-bar > div:first-child { border-top: 0; }
+  .stat-strip > div { border-left: 0; border-top: 1px solid var(--color-stroke); }
+  .stat-strip > div:first-child { border-top: 0; }
+  .page-head { gap: 14px; }
+}
+
+/* ---- Landing: facts -------------------------------------------------- */
+.fact-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--color-stroke); border-bottom: 1px solid var(--color-stroke); margin-top: 8px; }
+.fact-strip > div { display: flex; align-items: baseline; gap: 12px; padding: 20px 20px 20px 0; }
+.fact-strip > div + div { border-left: 1px solid var(--color-stroke); padding-left: 24px; }
+.fact-strip strong { font-size: 30px; font-weight: 600; letter-spacing: -0.04em; color: var(--color-signal); }
+.fact-strip span { font-size: 12.5px; line-height: 1.6; color: var(--color-muted); }
+
+/* ---- Landing: feature rows ------------------------------------------- */
+/* Sides alternate. A page that runs as one centred column reads like a
+   document rather than something selling a product. */
+.feature-row { display: grid; grid-template-columns: 0.92fr 1.08fr; gap: 56px; align-items: center; padding: 58px 0; border-bottom: 1px solid var(--color-stroke); }
+.feature-row.flipped .feature-copy { order: 2; }
+.feature-row.flipped .feature-visual { order: 1; }
+.feature-copy h2 { margin-top: 14px; font-size: 33px; line-height: 1.16; letter-spacing: -0.04em; }
+.feature-copy > p { margin: 18px 0 24px; max-width: 46ch; font-size: 14.5px; line-height: 1.85; color: var(--color-muted); }
+.feature-visual { min-width: 0; }
+
+/* A drawn slice of the real screens, not a screenshot. */
+.shot { border: 1px solid var(--color-stroke); border-radius: 14px; background: var(--color-surface); padding: 18px 20px 20px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.07); }
+:root[data-theme="dark"] .shot { box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4); }
+.shot-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--color-stroke); }
+.shot-head strong { font-size: 17px; font-weight: 600; }
+.shot-foot { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--color-stroke); font-size: 11.5px; line-height: 1.7; color: var(--color-muted); }
+
+.split-rows { display: flex; flex-direction: column; gap: 11px; }
+.split-rows > div { display: grid; grid-template-columns: 7.5rem 1fr auto; gap: 14px; align-items: center; }
+.split-label { font-size: 12px; color: var(--color-muted); }
+.split-track { height: 6px; border-radius: 3px; background: var(--color-control); overflow: hidden; }
+.split-track > span { display: block; height: 100%; background: var(--color-signal); border-radius: 3px; }
+.split-amount { font-size: 12px; }
+
+.check-rows { display: flex; flex-direction: column; }
+.check-rows > li { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; padding: 11px 0 11px 20px; position: relative; border-top: 1px solid var(--color-stroke); }
+.check-rows > li:first-child { border-top: 0; }
+.check-rows > li::before { content: ''; position: absolute; left: 0; top: 16px; width: 8px; height: 8px; border-radius: 50%; background: var(--color-signal); }
+.check-rows > li.bad::before { background: var(--color-danger); }
+.check-part { font-size: 13.5px; font-weight: 600; }
+.check-spec { font-family: Consolas, 'Courier New', monospace; font-size: 10.5px; letter-spacing: 0.06em; color: var(--color-muted); align-self: center; }
+.check-why { grid-column: 1 / -1; font-size: 11.5px; line-height: 1.6; color: var(--color-danger); }
+.power-rows { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--color-stroke); display: flex; flex-direction: column; gap: 8px; }
+.power-rows p { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--color-muted); }
+.power-rows strong { color: var(--color-ink); font-weight: 600; }
+
+.track-name { font-size: 17px; font-weight: 600; }
+.track-sub { margin-top: 5px; font-size: 12px; color: var(--color-muted); }
+.track-steps { margin-top: 18px; display: flex; flex-direction: column; }
+.track-steps > li { position: relative; display: flex; align-items: center; gap: 12px; padding: 0 0 18px 0; font-size: 12.5px; color: var(--color-muted); }
+.track-steps > li::after { content: ''; position: absolute; left: 4px; top: 14px; bottom: 0; width: 1px; background: var(--color-stroke); }
+.track-steps > li:last-child { padding-bottom: 0; }
+.track-steps > li:last-child::after { display: none; }
+.track-steps > li > span { width: 9px; height: 9px; flex: none; border-radius: 50%; border: 1px solid var(--color-stroke); background: var(--color-control); }
+.track-steps > li.done { color: var(--color-ink); }
+.track-steps > li.done > span { background: var(--color-signal); border-color: var(--color-signal); }
+
+/* ---- Landing: questions ---------------------------------------------- */
+.faq-section { margin-top: 56px; }
+.faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 48px; }
+.faq-grid > div { padding: 20px 0; border-top: 1px solid var(--color-stroke); }
+.faq-grid dt { font-size: 15px; font-weight: 600; }
+.faq-grid dd { margin: 9px 0 0; max-width: 46ch; font-size: 13.5px; line-height: 1.8; color: var(--color-muted); }
+
+/* ---- Find a build ---------------------------------------------------- */
+.finder { border: 1px solid var(--color-stroke); border-top: 3px solid var(--color-signal); border-radius: 14px; background: var(--color-surface); padding: 24px; display: grid; grid-template-columns: 17rem 1fr; gap: 28px 36px; align-items: start; }
+.finder-budget label { display: block; font-size: 13px; }
+.peso-field { display: flex; align-items: center; margin-top: 9px; border: 1px solid var(--color-stroke); border-radius: 9px; background: var(--color-control); overflow: hidden; }
+.peso-field > span { padding: 0 2px 0 13px; font-size: 17px; color: var(--color-muted); }
+.peso-field input { margin: 0; border: 0; background: transparent; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 11px 12px 11px 6px; }
+.peso-field input:focus-visible { outline: none; }
+.peso-field:focus-within { border-color: var(--color-signal); }
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.preset { padding: 5px 10px; border: 1px solid var(--color-stroke); border-radius: 999px; background: var(--color-surface); font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--color-muted); }
+.preset:hover { color: var(--color-ink); border-color: var(--color-muted); }
+.preset.picked { border-color: var(--color-signal); background: var(--color-signal-soft); color: var(--color-ink); }
+
+.finder-use { min-width: 0; }
+.finder-use legend { font-size: 13px; font-weight: 500; margin-bottom: 9px; }
+.use-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 8px; }
+/* A card per use case rather than a dropdown: the description is the thing
+   that tells a customer which one they are, and a select hides it. */
+.use-card { display: flex; flex-direction: column; gap: 4px; padding: 12px 13px; border: 1px solid var(--color-stroke); border-radius: 10px; background: var(--color-control); cursor: pointer; font-weight: 400; }
+.use-card:hover { border-color: var(--color-muted); }
+.use-card.picked { border-color: var(--color-signal); background: var(--color-signal-soft); }
+.use-card:focus-within { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.use-name { font-size: 13.5px; font-weight: 600; }
+.use-desc { font-size: 11.5px; line-height: 1.6; color: var(--color-muted); }
+.use-card.other { border-style: dashed; }
+.finder-go { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding-top: 20px; border-top: 1px solid var(--color-stroke); }
+.result-message { margin: 16px 0 22px; font-size: 13.5px; line-height: 1.8; color: var(--color-muted); }
+.target-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.target-rows > div { display: grid; grid-template-columns: 6.5rem 1fr auto; gap: 12px; align-items: center; }
+.target-label { font-size: 12px; color: var(--color-muted); }
+.target-amount { font-size: 12px; }
+
+@media (max-width: 1023px) {
+  .feature-row { grid-template-columns: 1fr; gap: 30px; padding: 42px 0; }
+  .feature-row.flipped .feature-copy { order: 1; }
+  .feature-row.flipped .feature-visual { order: 2; }
+  .feature-copy h2 { font-size: 28px; }
+  .finder { grid-template-columns: 1fr; gap: 22px; }
+  .faq-grid { grid-template-columns: 1fr; gap: 0; }
+  .fact-strip { grid-template-columns: repeat(2, 1fr); }
+  .fact-strip > div:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .fact-strip > div:nth-child(n+3) { border-top: 1px solid var(--color-stroke); }
+}
+@media (max-width: 639px) {
+  .fact-strip { grid-template-columns: 1fr; }
+  .fact-strip > div { border-left: 0; padding-left: 0; }
+  .fact-strip > div + div { border-left: 0; padding-left: 0; border-top: 1px solid var(--color-stroke); }
+  .split-rows > div, .target-rows > div { grid-template-columns: 1fr auto; }
+  .split-rows .split-track, .target-rows .split-track { display: none; }
+  .shot { padding: 15px 16px 17px; }
+  .peso-field input { font-size: 17px; }
+}
+
+/* ---- Landing: published builds --------------------------------------- */
+.showcase { margin-top: 56px; }
+.showcase-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr)); gap: 20px; }
+.build-card { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--color-stroke); border-radius: 14px; background: var(--color-surface); overflow: hidden; }
+.build-card:hover { border-color: var(--color-signal); }
+.build-photo { position: relative; border-bottom: 1px solid var(--color-stroke); }
+/* The photo fills the top of the card rather than sitting in its own box. */
+.build-photo .component-image { border: 0; border-radius: 0; aspect-ratio: 16 / 10; }
+.build-photo .component-image img { padding: 22px 26px; }
+/* Product photos are on a white tile in both themes, so the pill is fixed
+   dark rather than following the theme tokens. */
+.build-price { position: absolute; left: 12px; bottom: 12px; padding: 5px 11px; border-radius: 999px; background: #18181b; color: #fff; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.build-body { display: flex; flex-direction: column; flex: 1 1 auto; padding: 16px 17px 17px; }
+.build-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.build-title h3 { font-size: 16px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+.build-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 18px; }
+.build-thumbs .component-image.compact { width: 46px; height: 46px; }
+.build-thumbs .more { width: 46px; height: 46px; display: grid; place-items: center; border: 1px dashed var(--color-stroke); border-radius: 8px; font-size: 11.5px; color: var(--color-muted); }
+.build-card .button { margin-top: auto; }
+.showcase-foot { margin-top: 16px; font-size: 11.5px; line-height: 1.7; color: var(--color-muted); }
+@media (max-width: 479px) {
+  .showcase-grid { grid-template-columns: 1fr; }
+  .build-photo .component-image { aspect-ratio: 16 / 9; }
+}
+
+/* ---- Build photos ---------------------------------------------------- */
+/* A unit photo is a real scene, so it fills the frame. A part photo is a
+   cut-out on white, so it stays contained with padding. */
+/* The frame is a fixed shape, the photo is whatever the shop found. A blurred
+   copy fills the frame and the real photo is contained on top, so a square
+   product shot, a wide scene and a tall tower all fit without cropping and
+   without leaving a dead strip beside them. */
+.build-photo.unit { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: var(--color-control); }
+.photo-wash { position: absolute; inset: -7%; background-size: cover; background-position: center; filter: blur(22px) saturate(1.2); opacity: 0.55; }
+.build-photo.unit img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; padding: 12px; display: block; }
+.build-photo.unit .build-price { z-index: 2; background: rgba(10, 10, 12, 0.82); backdrop-filter: blur(3px); }
+.photo-preview { position: relative; margin-top: 10px; border: 1px solid var(--color-stroke); border-radius: 9px; overflow: hidden; background: var(--color-control); aspect-ratio: 16 / 9; }
+.photo-preview img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; padding: 8px; display: block; }
+.row-thumb { display: block; width: 58px; height: 38px; object-fit: cover; border-radius: 6px; border: 1px solid var(--color-stroke); background: var(--color-control); }
+.row-thumb.empty { border-style: dashed; }

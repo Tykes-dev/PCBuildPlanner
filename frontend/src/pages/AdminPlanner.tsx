@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTableState } from '../hooks/useTableState';
 import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { IconButton, IconLink } from '../components/Icon';
 import { api, errorMessage } from '../api/axios';
 import { Builder } from './Builder';
 import { pesos, type Item, type Plan } from '../types';
@@ -21,6 +22,7 @@ export function AdminPlanner() {
   const [loading, setLoading] = useState(Boolean(params.get('inquiry') || params.get('build')));
   const [name, setName] = useState('');
   const [reply, setReply] = useState('');
+  const [photo, setPhoto] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -51,6 +53,7 @@ export function AdminPlanner() {
       .then(response => {
         if (cancelled) return;
         setName(response.data.name);
+        setPhoto(response.data.imageUrl || '');
         setPlan(current => ({ ...current, budget: response.data.budget, profileSlug: response.data.profileSlug, items: response.data.items as Item[] }));
       })
       .catch(failure => { if (!cancelled) setError(errorMessage(failure)); })
@@ -109,7 +112,7 @@ export function AdminPlanner() {
     try {
       const id = buildId || (await api.post<SavedBuild>('/builds', payload())).data.id;
       if (buildId) await api.put('/builds/' + buildId, payload());
-      await api.patch('/builds/' + id + '/visibility', { visibility: 'published' });
+      await api.patch('/builds/' + id + '/visibility', { visibility: 'published', imageUrl: photo.trim() });
       setFeedback(name.trim() + (buildId ? ' was updated on the landing page.' : ' is now on the landing page for customers to see.'));
       loadShowcase();
     } catch (failure) { setError(errorMessage(failure)); }
@@ -127,17 +130,19 @@ export function AdminPlanner() {
   }
 
   const showcaseColumns: DataTableColumn<SavedBuild>[] = [
+    { key: 'photo', header: 'Photo', hideBelow: 'sm', render: row => row.imageUrl
+      ? <img className="row-thumb" src={row.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+      : <span className="row-thumb empty" title="No photo yet" aria-label="No photo yet"/> },
     { key: 'name', header: 'Build', sortable: true, render: row => <>
       <p className="font-medium break-words">{row.name}</p>
       <p className="text-xs text-muted mt-1">{row.items.length} of 7 categories · {row.profileSlug.replace(/-/g, ' ')}</p>
     </> },
-    { key: 'total', header: 'Total', sortable: true, align: 'right', render: row => pesos(row.total) },
+    { key: 'total', header: 'Total', sortable: true, align: 'right', numeric: true, render: row => pesos(row.total) },
     { key: 'updatedAt', header: 'Updated', sortable: true, hideBelow: 'md', render: row => <span className="text-xs text-muted">{buildDate(row.updatedAt)}</span> },
-    { key: 'actions', header: 'Actions', align: 'right', render: row => <div className="flex flex-wrap justify-end gap-2">
-      <Link className="button secondary !py-1.5" to={'/admin/plan?build=' + row.id}>Edit</Link>
-      <button type="button" className="button secondary !py-1.5" onClick={() => unpublish(row)} disabled={rowBusy === row.id}>
-        {rowBusy === row.id ? 'Removing…' : 'Unpublish'}
-      </button>
+    { key: 'actions', header: 'Actions', align: 'right', render: row => <div className="row-actions">
+      <IconLink icon="edit" label={'Edit ' + row.name} to={'/admin/plan?build=' + row.id}/>
+      <IconButton icon="hide" tone="danger" label={'Unpublish ' + row.name}
+        onClick={() => unpublish(row)} busy={rowBusy === row.id}/>
     </div> }
   ];
 
@@ -158,6 +163,17 @@ export function AdminPlanner() {
       <label htmlFor="proposal-reply">Message to the customer <span className="text-muted font-normal">(optional)</span></label>
       <input id="proposal-reply" value={reply} maxLength={1000} disabled={busy}
         onChange={event => setReply(event.target.value)} placeholder="This stays under your budget and leaves room to upgrade."/>
+    </div>}
+    {!inquiryId && <div className="mt-4">
+      <label htmlFor="build-photo">Photo of the finished unit <span className="text-muted font-normal">(optional)</span></label>
+      <input id="build-photo" type="url" value={photo} maxLength={2000} disabled={busy}
+        onChange={event => setPhoto(event.target.value)} placeholder="https://example.com/tower.jpg"/>
+      <p className="panel-foot !mt-2">An HTTPS link to a picture of a built PC. A stock photo is fine, it only has to look like the kind of machine this build is. Leave it empty to show the leading part instead.</p>
+      {photo.trim().startsWith('https://') && <div className="photo-preview">
+        <span className="photo-wash" aria-hidden="true"
+          style={{ backgroundImage: `url("${photo.trim().replace(/"/g, '%22')}")` }}/>
+        <img src={photo.trim()} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+      </div>}
     </div>}
     <button type="button" className="button light w-full mt-5" disabled={!ready}
       onClick={inquiryId ? send : publish}>

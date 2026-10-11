@@ -3,6 +3,7 @@ import Build from '../models/Build.js';
 import BuildRequest from '../models/BuildRequest.js';
 import { requireUser } from '../middleware/auth.js';
 import { badRequest } from '../services/errors.js';
+import { validHttpsUrl } from '../services/componentInput.js';
 import {
   buildId, buildName, getOwnedBuild, prepareBuild, requireObject, resolveCurrentBuild, serializeBuild
 } from '../services/builds.js';
@@ -58,12 +59,25 @@ router.delete('/:id', async (req, res) => {
 });
 
 // Publishing is how a shop build becomes a suggestion customers can browse.
+// The landing-page photo is set here rather than on the build payload, so an
+// inquiry proposal can never carry one.
 router.patch('/:id/visibility', async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Only an administrator can publish a build.' });
   if (!['private', 'published'].includes(req.body?.visibility)) throw badRequest('Choose private or published.');
+  const changes = { visibility: req.body.visibility, shopBuild: true };
+  // Left out entirely means leave the current photo alone, so unpublishing and
+  // republishing does not lose it. An empty string clears it.
+  if (req.body.imageUrl !== undefined) {
+    if (typeof req.body.imageUrl !== 'string' || req.body.imageUrl.length > 2000) {
+      throw badRequest('Photo link must be text up to 2,000 characters.', { imageUrl: 'Photo link must be text up to 2,000 characters.' });
+    }
+    const photo = req.body.imageUrl.trim();
+    if (photo && !validHttpsUrl(photo)) throw badRequest('Use a valid HTTPS photo link.', { imageUrl: 'Use a valid HTTPS photo link.' });
+    changes.imageUrl = photo;
+  }
   const build = await getOwnedBuild(req.params.id, req.user._id);
   const updated = await Build.findOneAndUpdate({ _id: build._id, owner: req.user._id },
-    { $set: { visibility: req.body.visibility, shopBuild: true } }, { new: true, runValidators: true }).lean();
+    { $set: changes }, { new: true, runValidators: true }).lean();
   if (!updated) return res.status(404).json({ message: 'Build not found.' });
   res.json({ message: req.body.visibility === 'published' ? 'Build published. Customers can now see it.' : 'Build hidden from customers.', build: serializeBuild(updated) });
 });

@@ -16,16 +16,24 @@ export function Drawer({ open, title, description, onClose, children, footer, wi
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
+  // Callers pass a fresh arrow function on every render. Depending on its
+  // identity re-ran the whole effect on every keystroke, which moved focus to
+  // the close button mid-sentence, so the callback is read through a ref and
+  // the effect depends on `open` alone.
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; });
 
   useEffect(() => {
     if (!open) return;
     opener.current = document.activeElement as HTMLElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    panel.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    // The first field, not the close button.
+    const body = panel.current?.querySelector<HTMLElement>('.drawer-body');
+    (body?.querySelector<HTMLElement>(FOCUSABLE) || panel.current?.querySelector<HTMLElement>(FOCUSABLE))?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') { event.stopPropagation(); onClose(); return; }
+      if (event.key === 'Escape') { event.stopPropagation(); close.current(); return; }
       if (event.key !== 'Tab' || !panel.current) return;
       const targets = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
       if (!targets.length) return;
@@ -40,7 +48,7 @@ export function Drawer({ open, title, description, onClose, children, footer, wi
       document.body.style.overflow = previousOverflow;
       opener.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

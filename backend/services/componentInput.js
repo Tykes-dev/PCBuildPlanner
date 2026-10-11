@@ -83,9 +83,8 @@ function validImageUrl(value) {
   return validHttpsUrl(value);
 }
 
-function validHttpsUrl(value) {
+export function validHttpsUrl(value) {
   if (!value.startsWith('https://')) return false;
   try { const url = new URL(value); return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password; }
   catch { return false; }
 }
-

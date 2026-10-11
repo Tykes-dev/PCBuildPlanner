@@ -75,7 +75,8 @@ export function serializeBuild(document) {
   return {
     id: String(build._id), name: build.name, budget: build.budget, profileSlug: build.profileSlug,
     items: build.items.map(item => ({ component: { ...item.snapshot, _id: String(item.component) }, quantity: item.quantity })),
-    total: build.total, createdAt: build.createdAt, updatedAt: build.updatedAt
+    total: build.total, imageUrl: build.imageUrl || '',
+    createdAt: build.createdAt, updatedAt: build.updatedAt
   };
 }
 
@@ -145,5 +146,3 @@ export async function resolveCurrentBuild(build, { requireAvailable = false } = 
   }
   return { items: normalizeItems(items), profile, notices };
 }
-
-

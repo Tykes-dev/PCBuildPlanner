@@ -17,7 +17,10 @@ const schema = new mongoose.Schema({
   // Builds the shop makes: proposals answering an inquiry, and showcase builds.
   // They are kept out of customer activity counts.
   shopBuild: { type: Boolean, default: false },
-  visibility: { type: String, enum: ['private', 'published'], default: 'private' }
+  visibility: { type: String, enum: ['private', 'published'], default: 'private' },
+  // A photo of a finished unit, shown on the landing page. Set when the build
+  // is published, so an inquiry proposal never carries one.
+  imageUrl: { type: String, default: '', maxlength: 2000 }
 }, { timestamps: true });
 
 schema.index({ owner: 1, updatedAt: -1 });

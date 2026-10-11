@@ -1,4 +1,6 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { isAxiosError } from 'axios';
 import { api, errorMessage } from '../api/axios';
 import { useApi } from '../hooks/useApi';
@@ -6,35 +8,25 @@ import { useTableState } from '../hooks/useTableState';
 import { DataTable, type DataTableColumn } from '../components/DataTable';
 import { Drawer } from '../components/Drawer';
 import { Feedback } from '../components/Feedback';
+import { IconButton } from '../components/Icon';
+import { emptyProfile, profileSchema, toProfilePayload, type ProfileFormValues } from '../schemas/profile';
 import { CATEGORIES, LABELS, pesos, type Category, type Profile } from '../types';
 
-const MINIMUM_CATEGORIES: Category[] = ['memory', 'storage'];
 const PREVIEW_BUDGET = 50000;
 
-type Rows = Record<Category, { percent: string; priority: string }>;
-type Minimums = Record<'memory' | 'storage', string>;
-type FieldErrors = Partial<Record<'slug' | 'label' | 'description' | 'allocations' | 'minimums', string>>;
-
-const EVEN = Math.floor(100 / CATEGORIES.length);
-const emptyRows = (): Rows => Object.fromEntries(CATEGORIES.map((category, index) => [category,
-  { percent: String(index === 0 ? 100 - EVEN * (CATEGORIES.length - 1) : EVEN), priority: String(index + 1) }])) as Rows;
-const emptyMinimums = (): Minimums => ({ memory: '', storage: '' });
-
-function toRows(profile: Profile): Rows {
-  const rows = emptyRows();
-  for (const category of CATEGORIES) {
-    const match = profile.allocations.find(allocation => allocation.category === category);
-    rows[category] = { percent: match ? String(match.percent) : '0', priority: match ? String(match.priority) : '1' };
-  }
-  return rows;
-}
-function toMinimums(profile: Profile): Minimums {
-  const minimums = emptyMinimums();
-  for (const category of MINIMUM_CATEGORIES) {
-    const match = profile.minimums?.find(minimum => minimum.category === category);
-    if (match) minimums[category as 'memory' | 'storage'] = String(match.value);
-  }
-  return minimums;
+function toForm(profile: Profile): ProfileFormValues {
+  const minimum = (category: string) => {
+    const match = profile.minimums?.find(entry => entry.category === category);
+    return match ? String(match.value) : '';
+  };
+  return {
+    slug: profile.slug, label: profile.label, description: profile.description || '',
+    minMemory: minimum('memory'), minStorage: minimum('storage'),
+    rows: CATEGORIES.map(category => {
+      const match = profile.allocations.find(allocation => allocation.category === category);
+      return { category, percent: match ? String(match.percent) : '0', priority: match ? String(match.priority) : '1' };
+    })
+  };
 }
 
 const searchText = (row: Profile) => [row.label, row.slug, row.description].filter(Boolean).join(' ');
@@ -46,102 +38,66 @@ const sortValues = {
 
 export function AdminProfiles() {
   const profiles = useApi<Profile[]>('/admin/profiles');
-  const [slug, setSlug] = useState('');
-  const [label, setLabel] = useState('');
-  const [description, setDescription] = useState('');
-  const [rows, setRows] = useState<Rows>(emptyRows);
-  const [minimums, setMinimums] = useState<Minimums>(emptyMinimums);
-  const [fields, setFields] = useState<FieldErrors>({});
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Profile | null>(null);
   const [confirm, setConfirm] = useState<Profile | null>(null);
-  const [error, setError] = useState('');
+  const [pageError, setPageError] = useState('');
   const [formError, setFormError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const [busy, setBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [state, setState] = useState<'' | 'active' | 'archived'>('');
-  const submitting = useRef(false);
+
+  // The seven shares have to total 100 and each priority has to be used once,
+  // so the rules live in schemas/profile.ts where they can see the whole form.
+  const { register, handleSubmit, reset, watch, setValue, setError,
+    formState: { errors, isSubmitting } } = useForm<ProfileFormValues>({
+      resolver: zodResolver(profileSchema), defaultValues: emptyProfile()
+    });
+  const busy = isSubmitting;
+  const rows = watch('rows');
 
   const visible = (profiles.data || []).filter(row =>
     !state || (state === 'archived' ? row.active === false : row.active !== false));
   const table = useTableState<Profile>({ rows: visible, searchText, sortValues, pageSize: 10, initialSort: { key: 'label', direction: 'asc' } });
 
-  const total = CATEGORIES.reduce((sum, category) => sum + (Number(rows[category].percent) || 0), 0);
-  const usedPriorities = CATEGORIES.map(category => rows[category].priority);
+  // Derived while rendering rather than stored, so the running total and the
+  // priority warning react as the administrator types.
+  const total = rows.reduce((sum, row) => sum + (Number(row.percent) || 0), 0);
+  const usedPriorities = rows.map(row => row.priority);
   const duplicatePriority = new Set(usedPriorities).size !== usedPriorities.length;
-  const ordered = [...CATEGORIES].sort((a, b) => Number(rows[a].priority) - Number(rows[b].priority));
-
-  function setRow(category: Category, key: 'percent' | 'priority', value: string) {
-    setRows(current => ({ ...current, [category]: { ...current[category], [key]: value } }));
-    setFields(current => ({ ...current, allocations: undefined }));
-    setFormError('');
-  }
+  const ordered = rows.map((row, index) => ({ row, index }))
+    .sort((a, b) => Number(a.row.priority) - Number(b.row.priority));
 
   function sortPriorityByPercent() {
-    const ranked = [...CATEGORIES].sort((a, b) => (Number(rows[b].percent) || 0) - (Number(rows[a].percent) || 0) || a.localeCompare(b));
-    setRows(current => {
-      const next = { ...current };
-      ranked.forEach((category, index) => { next[category] = { ...next[category], priority: String(index + 1) }; });
-      return next;
-    });
-    setFields(current => ({ ...current, allocations: undefined }));
+    const ranked = rows.map((row, index) => ({ row, index }))
+      .sort((a, b) => (Number(b.row.percent) || 0) - (Number(a.row.percent) || 0)
+        || a.row.category.localeCompare(b.row.category));
+    ranked.forEach((entry, position) => setValue(`rows.${entry.index}.priority`, String(position + 1)));
+    setFormError('');
   }
 
   function openForm(profile?: Profile) {
     setEditing(profile || null);
-    setSlug(profile?.slug || ''); setLabel(profile?.label || ''); setDescription(profile?.description || '');
-    setRows(profile ? toRows(profile) : emptyRows());
-    setMinimums(profile ? toMinimums(profile) : emptyMinimums());
-    setFields({}); setFormError(''); setFeedback(''); setError('');
+    reset(profile ? toForm(profile) : emptyProfile());
+    setFormError(''); setFeedback(''); setPageError('');
     setFormOpen(true);
   }
 
   async function act(profile: Profile, run: () => Promise<{ data: { message?: string } }>, fallback: string) {
-    setError(''); setFeedback(''); setRowBusy(profile._id || '');
+    setPageError(''); setFeedback(''); setRowBusy(profile._id || '');
     try {
       const response = await run();
       setFeedback(response.data.message || fallback);
       setConfirm(null);
       profiles.retry();
-    } catch (failure) { setError(errorMessage(failure)); }
+    } catch (failure) { setPageError(errorMessage(failure)); }
     finally { setRowBusy(null); }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting.current) return;
+  async function onSubmit(values: ProfileFormValues) {
     setFormError('');
-    const errors: FieldErrors = {};
-    const cleanSlug = slug.trim().toLowerCase();
-    if (!cleanSlug || cleanSlug.length > 100 || !/^[a-z0-9-]+$/.test(cleanSlug)) errors.slug = 'Use lowercase letters, numbers and hyphens, up to 100 characters.';
-    if (!label.trim() || label.trim().length > 80) errors.label = 'Enter a name up to 80 characters.';
-    if (description.length > 300) errors.description = 'Use text up to 300 characters.';
-    if (CATEGORIES.some(category => {
-      const percent = Number(rows[category].percent);
-      return !rows[category].percent.trim() || !Number.isFinite(percent) || percent < 0 || percent > 100;
-    })) errors.allocations = 'Each percentage must be a number from 0 to 100.';
-    else if (duplicatePriority) errors.allocations = 'Use each priority from 1 to 7 exactly once.';
-    else if (Math.abs(total - 100) > 0.0001) errors.allocations = `The seven percentages must total 100. They currently total ${Math.round(total * 100) / 100}.`;
-    for (const category of MINIMUM_CATEGORIES) {
-      const raw = minimums[category as 'memory' | 'storage'].trim();
-      if (!raw) continue;
-      const value = Number(raw);
-      if (!Number.isSafeInteger(value) || value < 1) errors.minimums = 'Enter whole capacities in GB of at least 1, or leave them blank.';
-    }
-    setFields(errors);
-    if (Object.keys(errors).length) { setFormError('Check the highlighted fields before saving.'); return; }
-
-    const payload = {
-      slug: cleanSlug, label: label.trim(), description: description.trim(),
-      allocations: CATEGORIES.map(category => ({ category, percent: Number(rows[category].percent), priority: Number(rows[category].priority) })),
-      minimums: MINIMUM_CATEGORIES
-        .filter(category => minimums[category as 'memory' | 'storage'].trim())
-        .map(category => ({ category, value: Number(minimums[category as 'memory' | 'storage']) }))
-    };
-
-    submitting.current = true; setBusy(true);
     try {
+      const payload = toProfilePayload(values);
       const response = editing
         ? await api.put<Profile>('/admin/profiles/' + editing._id, payload)
         : await api.post<Profile>('/admin/profiles', payload);
@@ -150,11 +106,15 @@ export function AdminProfiles() {
       profiles.retry();
     } catch (failure) {
       setFormError(errorMessage(failure));
+      // A duplicate slug comes back from the server, not from the schema.
       if (isAxiosError(failure) && failure.response?.data?.fields) {
-        setFields(Object.fromEntries(Object.entries(failure.response.data.fields as Record<string, unknown>)
-          .filter(([, value]) => typeof value === 'string')) as FieldErrors);
+        for (const [key, message] of Object.entries(failure.response.data.fields as Record<string, unknown>)) {
+          if (['slug', 'label', 'description'].includes(key) && typeof message === 'string') {
+            setError(key as 'slug' | 'label' | 'description', { message });
+          }
+        }
       }
-    } finally { submitting.current = false; setBusy(false); }
+    }
   }
 
   const columns: DataTableColumn<Profile>[] = [
@@ -170,15 +130,16 @@ export function AdminProfiles() {
     { key: 'top', header: 'Largest shares', sortable: true, hideBelow: 'md', render: row => <span className="text-xs text-muted">
       {[...row.allocations].sort((a, b) => a.priority - b.priority).slice(0, 3).map(item => LABELS[item.category] + ' ' + item.percent + '%').join(' · ')}
     </span> },
-    { key: 'actions', header: 'Actions', align: 'right', render: row => <div className="flex flex-wrap justify-end gap-2">
-      <button type="button" className="button secondary !py-1.5" onClick={() => openForm(row)} disabled={rowBusy === row._id}>Edit</button>
+    { key: 'actions', header: 'Actions', align: 'right', render: row => <div className="row-actions">
+      <IconButton icon="edit" label={'Edit ' + row.label} onClick={() => openForm(row)} disabled={rowBusy === row._id}/>
       {row.active === false
-        ? <button type="button" className="button secondary !py-1.5" disabled={rowBusy === row._id}
-            onClick={() => act(row, () => api.patch('/admin/profiles/' + row._id + '/restore'), 'Profile restored.')}>Restore</button>
+        ? <IconButton icon="restore" label={'Restore ' + row.label} busy={rowBusy === row._id}
+            onClick={() => act(row, () => api.patch('/admin/profiles/' + row._id + '/restore'), 'Profile restored.')}/>
         : <>
-          {!row.isDefault && <button type="button" className="button secondary !py-1.5" disabled={rowBusy === row._id}
-            onClick={() => act(row, () => api.patch('/admin/profiles/' + row._id + '/default'), 'Default updated.')}>Make default</button>}
-          <button type="button" className="button secondary !py-1.5" onClick={() => setConfirm(row)} disabled={rowBusy === row._id}>Archive</button>
+          {!row.isDefault && <IconButton icon="star" label={'Make ' + row.label + ' the default'} busy={rowBusy === row._id}
+            onClick={() => act(row, () => api.patch('/admin/profiles/' + row._id + '/default'), 'Default updated.')}/>}
+          <IconButton icon="archive" tone="danger" label={'Archive ' + row.label}
+            onClick={() => setConfirm(row)} disabled={rowBusy === row._id}/>
         </>}
     </div> }
   ];
@@ -187,7 +148,7 @@ export function AdminProfiles() {
     <span className="eyebrow">ADMINISTRATION</span><h1>Use cases.</h1>
     <p className="intro">A use case decides how a customer's budget is divided across the seven categories.</p>
 
-    {error && <p role="alert" className="notice error mb-4">{error}</p>}
+    {pageError && <p role="alert" className="notice error mb-4">{pageError}</p>}
     {feedback && <p role="status" className="notice note mb-4">{feedback}</p>}
 
     <Feedback loading={profiles.loading} error={profiles.error} retry={profiles.retry}/>
@@ -209,28 +170,26 @@ export function AdminProfiles() {
         <button type="button" className="button secondary" onClick={() => { setFormOpen(false); setEditing(null); }} disabled={busy}>Cancel</button>
       </>}>
       {formError && <p role="alert" className="notice error mb-5">{formError}</p>}
-      <form id="profile-form" onSubmit={submit} className="grid gap-6">
+      <form id="profile-form" noValidate className="grid gap-6"
+        onSubmit={handleSubmit(onSubmit, () => setFormError('Check the highlighted fields before saving.'))}>
         <fieldset disabled={busy} className="min-w-0">
           <legend className="text-sm font-semibold mb-4">Details</legend>
           <div className="grid sm:grid-cols-2 gap-5">
             <div>
               <label htmlFor="profile-label">Name</label>
-              <input id="profile-label" value={label} maxLength={80} aria-invalid={Boolean(fields.label)}
-                onChange={event => { setLabel(event.target.value); setFields(current => ({ ...current, label: undefined })); }}/>
-              {fields.label && <p role="alert" className="field-error">{fields.label}</p>}
+              <input id="profile-label" {...register('label')} maxLength={80} aria-invalid={Boolean(errors.label)}/>
+              {errors.label && <p role="alert" className="field-error">{errors.label.message}</p>}
             </div>
             <div>
               <label htmlFor="profile-slug">Slug</label>
-              <input id="profile-slug" value={slug} maxLength={100} placeholder="gaming" aria-invalid={Boolean(fields.slug)}
-                onChange={event => { setSlug(event.target.value); setFields(current => ({ ...current, slug: undefined })); }}/>
+              <input id="profile-slug" {...register('slug')} maxLength={100} placeholder="gaming" aria-invalid={Boolean(errors.slug)}/>
               <p className="text-xs text-muted mt-2">Lowercase letters, numbers and hyphens. Saved builds keep this value.</p>
-              {fields.slug && <p role="alert" className="field-error">{fields.slug}</p>}
+              {errors.slug && <p role="alert" className="field-error">{errors.slug.message}</p>}
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="profile-description">Description</label>
-              <input id="profile-description" value={description} maxLength={300} placeholder="Competitive gaming at 1080p."
-                onChange={event => { setDescription(event.target.value); setFields(current => ({ ...current, description: undefined })); }}/>
-              {fields.description && <p role="alert" className="field-error">{fields.description}</p>}
+              <input id="profile-description" {...register('description')} maxLength={300} placeholder="Competitive gaming at 1080p." aria-invalid={Boolean(errors.description)}/>
+              {errors.description && <p role="alert" className="field-error">{errors.description.message}</p>}
             </div>
           </div>
         </fieldset>
@@ -241,8 +200,11 @@ export function AdminProfiles() {
             <button type="button" className="button secondary !py-1.5" onClick={sortPriorityByPercent} disabled={busy}>Match priority to share</button>
           </div>
           <div className="space-y-3">
-            {ordered.map(category => {
-              const percent = Number(rows[category].percent) || 0;
+            {/* Rows are shown in priority order, but each input stays bound to
+                its own category so reordering never moves a value. */}
+            {ordered.map(({ row, index }) => {
+              const category = row.category as Category;
+              const percent = Number(row.percent) || 0;
               return <div className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-3 items-end" key={category}>
                 <div>
                   <span className="text-sm">{LABELS[category]}</span>
@@ -250,12 +212,12 @@ export function AdminProfiles() {
                 </div>
                 <div>
                   <label htmlFor={'percent-' + category} className="text-xs">Share %</label>
-                  <input id={'percent-' + category} type="number" min="0" max="100" step="any" value={rows[category].percent} onChange={event => setRow(category, 'percent', event.target.value)}/>
+                  <input id={'percent-' + category} type="number" min="0" max="100" step="any" {...register(`rows.${index}.percent`)}/>
                 </div>
                 <div>
                   <label htmlFor={'priority-' + category} className="text-xs">Priority</label>
-                  <select id={'priority-' + category} value={rows[category].priority} onChange={event => setRow(category, 'priority', event.target.value)}>
-                    {CATEGORIES.map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
+                  <select id={'priority-' + category} {...register(`rows.${index}.priority`)}>
+                    {CATEGORIES.map((_, option) => <option key={option + 1} value={option + 1}>{option + 1}</option>)}
                   </select>
                 </div>
               </div>;
@@ -265,21 +227,20 @@ export function AdminProfiles() {
             Total share: {Math.round(total * 100) / 100}%{Math.abs(total - 100) > 0.0001 ? ' · must equal 100%' : ' · ready to save'}
           </p>
           {duplicatePriority && <p className="field-error" role="alert">Each priority from 1 to 7 must be used exactly once.</p>}
-          {fields.allocations && <p className="field-error" role="alert">{fields.allocations}</p>}
+          {errors.rows?.message && <p className="field-error" role="alert">{errors.rows.message}</p>}
         </fieldset>
 
         <fieldset disabled={busy} className="min-w-0">
           <legend className="text-sm font-semibold mb-2">Recommended minimums <span className="text-muted font-normal">(optional)</span></legend>
           <p className="text-xs text-muted mb-4">Shown to the customer as a note. These do not block a build.</p>
           <div className="grid sm:grid-cols-2 gap-5">
-            {MINIMUM_CATEGORIES.map(category => <div key={category}>
+            {([['memory', 'minMemory'], ['storage', 'minStorage']] as const).map(([category, field]) => <div key={category}>
               <label htmlFor={'minimum-' + category}>{LABELS[category]} capacity (GB)</label>
               <input id={'minimum-' + category} type="number" min="1" step="1" placeholder="None"
-                value={minimums[category as 'memory' | 'storage']}
-                onChange={event => { setMinimums(current => ({ ...current, [category]: event.target.value })); setFields(current => ({ ...current, minimums: undefined })); }}/>
+                {...register(field)} aria-invalid={Boolean(errors[field])}/>
+              {errors[field] && <p className="field-error" role="alert">{errors[field]?.message}</p>}
             </div>)}
           </div>
-          {fields.minimums && <p className="field-error" role="alert">{fields.minimums}</p>}
         </fieldset>
       </form>
     </Drawer>

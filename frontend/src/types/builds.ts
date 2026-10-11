@@ -7,6 +7,7 @@ export interface SavedBuild {
   profileSlug: string;
   items: Item[];
   total: number;
+  imageUrl?: string;
   createdAt: string;
   updatedAt: string;
 }

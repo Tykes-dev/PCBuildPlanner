@@ -1,12 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../api/axios';
 import { useApi } from '../hooks/useApi';
 import { Feedback } from '../components/Feedback';
 import { Checks, Parts } from '../components/BuildSummary';
 import { ComponentPicker } from '../components/ComponentPicker';
+import { NumberField } from '../components/NumberField';
 import { SaveBuildControl } from '../components/SaveBuildControl';
 import { useComponentOptions } from '../hooks/useComponentOptions';
 import { CATEGORIES, LABELS, pesos, type Allocation, type Category, type Component, type Plan, type Profile, type ProfileAllocation, type Validation } from '../types';
+import type { SavedBuild } from '../types/builds';
 export function Builder({ plan, setPlan, actions, showSave = true, allowCustomSplit = false, showPrint = true }:
   { plan: Plan; setPlan: (plan: Plan) => void; actions?: ReactNode; showSave?: boolean; allowCustomSplit?: boolean; showPrint?: boolean }) {
   const catalog = useApi<Component[]>('/components'); const profiles = useApi<Profile[]>('/profiles');
@@ -17,6 +20,35 @@ export function Builder({ plan, setPlan, actions, showSave = true, allowCustomSp
   // never saved: the build still records whichever use case it started from.
   const [custom, setCustom] = useState<ProfileAllocation[] | null>(null);
   const [error, setError] = useState(''); const [checking, setChecking] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const fromId = params.get('from');
+  const [startedFrom, setStartedFrom] = useState('');
+
+  // ?from=<id> opens a build the shop published on the landing page. The parts
+  // are copied into the draft and the link is cleared, so a refresh does not
+  // throw away whatever the customer has changed since. Nothing ties the draft
+  // back to the shop's build: saving creates the customer's own.
+  useEffect(() => {
+    if (!fromId) return;
+    let cancelled = false;
+    api.get<SavedBuild[]>('/showcase')
+      .then(response => {
+        if (cancelled) return;
+        const source = response.data.find(build => build.id === fromId);
+        if (!source) return;
+        setPlan({ budget: source.budget, profileSlug: source.profileSlug, items: source.items, name: source.name });
+        setStartedFrom(source.name);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled) return;
+        const cleared = new URLSearchParams(window.location.search);
+        cleared.delete('from');
+        setParams(cleared, { replace: true });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromId]);
   const total = plan.items.reduce((s, i) => s + i.component.price * i.quantity, 0);
   const lockCount = Object.keys(locks).length;
   const customTotal = custom ? custom.reduce((sum, row) => sum + (Number.isFinite(row.percent) ? row.percent : 0), 0) : 100;
@@ -65,15 +97,18 @@ export function Builder({ plan, setPlan, actions, showSave = true, allowCustomSp
     setPlan({ ...plan, items: [...plan.items.filter(i => i.component.category !== category), ...(component ? [{ component, quantity: 1 }] : [])] });
   }
   return <><div className="flex flex-wrap justify-between gap-4"><div><span className="eyebrow">YOUR BUILD WORKSPACE</span><h1 className="break-words">{plan.name || 'Bring your parts together.'}</h1><p className="intro">Choose, compare, and check as you go.</p></div>{showPrint && <button className="button secondary no-print self-start" onClick={() => window.print()} disabled={!plan.items.length}>Print build sheet</button>}</div>
+    {Boolean(startedFrom) && <p className="notice note mt-5 no-print" role="status">
+      Started from <strong>{startedFrom}</strong>, a build the shop put together. Change any part, move the budget around, then save it as your own.
+    </p>}
     {!!plan.reopenNotices?.length && <section className="notice warning mt-5 no-print" aria-label="Catalog changes when reopening"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-sm">Your catalog has changed.</h2><button className="text-sm underline underline-offset-4" onClick={() => setPlan({ ...plan, reopenNotices: undefined })}>Dismiss</button></div><ul className="list-disc pl-5 mt-3 space-y-2">{plan.reopenNotices.map(notice => <li key={notice}>{notice}</li>)}</ul></section>}
     <Feedback loading={catalog.loading || profiles.loading} error={catalog.error || profiles.error} retry={() => { catalog.retry(); profiles.retry(); }}/>
-    {catalog.data && profiles.data && <><section className="panel budget-dashboard mt-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-5"><div><span className="eyebrow">BUILD TOTAL</span><p className="text-3xl font-semibold mt-2">{pesos(total)}</p><span className="text-xs text-muted">{plan.items.length} of 7 categories selected</span></div><div><span className="eyebrow">{total > plan.budget ? 'OVER BUDGET' : 'REMAINING'}</span><p className={`text-2xl font-semibold mt-2 ${total > plan.budget ? 'text-danger' : ''}`}>{pesos(Math.abs(plan.budget - total))}</p></div><label>Budget<input type="number" min="1" step="1" value={plan.budget} onChange={e => setPlan({ ...plan, budget: Number(e.target.value) })}/></label><label>Use case<select value={plan.profileSlug} onChange={e => { setCustom(null); setPlan({ ...plan, profileSlug: e.target.value }); }}>{profiles.data.map(p => <option key={p.slug} value={p.slug}>{p.label}</option>)}</select></label><div className="budget-meter sm:col-span-2 lg:col-span-4"><div className="budget-track" role="progressbar" aria-label="Budget used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, plan.budget > 0 ? Math.round(total / plan.budget * 100) : 0))} aria-valuetext={`${pesos(total)} of ${pesos(plan.budget)}`}><span className={total > plan.budget ? 'over' : ''} style={{width: `${Math.max(0, Math.min(100, plan.budget > 0 ? total / plan.budget * 100 : 0))}%`}}/></div><span className="text-xs text-muted">Budget used</span></div></section>
+    {catalog.data && profiles.data && <><section className="panel budget-dashboard mt-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-5"><div><span className="eyebrow">BUILD TOTAL</span><p className="text-3xl font-semibold mt-2">{pesos(total)}</p><span className="text-xs text-muted">{plan.items.length} of 7 categories selected</span></div><div><span className="eyebrow">{total > plan.budget ? 'OVER BUDGET' : 'REMAINING'}</span><p className={`text-2xl font-semibold mt-2 ${total > plan.budget ? 'text-danger' : ''}`}>{pesos(Math.abs(plan.budget - total))}</p></div><label>Budget<NumberField value={plan.budget} min={1} maxLength={8} onChange={next => setPlan({ ...plan, budget: next })}/></label><label>Use case<select value={plan.profileSlug} onChange={e => { setCustom(null); setPlan({ ...plan, profileSlug: e.target.value }); }}>{profiles.data.map(p => <option key={p.slug} value={p.slug}>{p.label}</option>)}</select></label><div className="budget-meter sm:col-span-2 lg:col-span-4"><div className="budget-track" role="progressbar" aria-label="Budget used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, plan.budget > 0 ? Math.round(total / plan.budget * 100) : 0))} aria-valuetext={`${pesos(total)} of ${pesos(plan.budget)}`}><span className={total > plan.budget ? 'over' : ''} style={{width: `${Math.max(0, Math.min(100, plan.budget > 0 ? total / plan.budget * 100 : 0))}%`}}/></div><span className="text-xs text-muted">Budget used</span></div></section>
     <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 mt-6"><div className="space-y-4 no-print">{CATEGORIES.map(category => {
       const item = plan.items.find(i => i.component.category === category);
       const allocation = allocations.find(a => a.category === category);
       return <section className="panel" key={category}><div className="flex justify-between gap-3"><h2>{LABELS[category]}</h2><span className="text-sm text-muted">{allocation ? `${pesos(allocation.allocated)} target` : ''}</span></div>
         <ComponentPicker category={category} components={catalog.data!} options={candidates.options} loading={candidates.loading} error={candidates.error} selected={item} target={allocation?.allocated} onChoose={id => choose(category, id)}/>
-        {item && <div className="flex flex-wrap gap-4 items-end mt-3"><p className="text-sm text-muted flex-1">{[item.component.socket, item.component.memoryType, item.component.formFactor, item.component.capacityGb && `${item.component.capacityGb}GB`, `${item.component.powerDraw}W draw`].filter(Boolean).join(' · ')}</p>{['memory', 'storage'].includes(category) && <label className="w-24">Quantity<input type="number" min="1" max="32" step="1" value={item.quantity} onChange={e => setPlan({ ...plan, items: plan.items.map(i => i === item ? { ...i, quantity: Number(e.target.value) } : i) })}/></label>}</div>}
+        {item && <div className="flex flex-wrap gap-4 items-end mt-3"><p className="text-sm text-muted flex-1">{[item.component.socket, item.component.memoryType, item.component.formFactor, item.component.capacityGb && `${item.component.capacityGb}GB`, `${item.component.powerDraw}W draw`].filter(Boolean).join(' · ')}</p>{['memory', 'storage'].includes(category) && <label className="w-24">Quantity<NumberField value={item.quantity} min={1} max={32} maxLength={2} onChange={next => setPlan({ ...plan, items: plan.items.map(i => i === item ? { ...i, quantity: next } : i) })}/></label>}</div>}
       </section>;
     })}<p className="text-sm text-muted">Use Save build to keep your selections in your account before leaving or refreshing this page.</p></div>
     <div className="space-y-5">{actions}{showSave && <SaveBuildControl plan={plan} setPlan={setPlan}/>}<div className="print-only panel"><h2>Build sheet</h2><Parts items={plan.items}/></div>{checking && <p role="status" className="text-muted">Checking your selections…</p>}{error && <p className="notice error" role="alert">{error}</p>}{validation && <Checks validation={validation}/>}
